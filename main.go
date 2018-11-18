@@ -85,14 +85,22 @@ func Start() {
 	proxy.OnRequest().DoFunc(
 		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 			//			r.Header.Set("X-GoProxy", "yxorPoG-X")
+
+			request := r
+			var response *http.Response = nil
 			if beforeRequestCallback != nil {
 				log.Printf("Request call")
-				id := saveRequestToInteropMap(r)
+
+				session := Session{r, nil, ctx}
+				id := saveSessionToInteropMap(&session)
 				C.FireCallback(beforeRequestCallback, C.int(id))
-				removeRequestFromInteropMap(id)
+				removeSessionFromInteropMap(id)
 				log.Printf("Request call end")
+
+				request = session.request
+				response = session.response
 			}
-			return r, nil
+			return request, response
 		})
 
 	proxy.OnResponse().DoFunc(

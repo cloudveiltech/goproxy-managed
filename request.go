@@ -2,52 +2,81 @@ package main
 
 import (
 	"C"
-	"net/http"
+	"bytes"
 )
-
-var (
-	requestMap    = make(map[int]*http.Request)
-	lastRequestId = 0
-)
-
-func saveRequestToInteropMap(req *http.Request) int {
-	requestMap[lastRequestId] = req
-	lastRequestId++
-	return lastRequestId - 1
-}
-
-func removeRequestFromInteropMap(id int) {
-	delete(requestMap, id)
-}
 
 //export RequestGetUrl
 func RequestGetUrl(id int, result *string) {
-	request, exists := requestMap[id]
-	if !exists {
+	request := getSessionRequest(id)
+	if request == nil {
 		return
 	}
 	*result = request.RequestURI
 }
 
-//export RequestHeaderExists
-func RequestHeaderExists(id int, name string) bool {
-	request, exists := requestMap[id]
-	if !exists {
+//export RequestGetBody
+func RequestGetBody(id int, res *[]byte) bool {
+	request := getSessionRequest(id)
+	if request == nil {
 		return false
 	}
+
+	if request.Body == nil {
+		return false
+	}
+
+	buf := new(bytes.Buffer)
+	buf.ReadFrom(request.Body)
+
+	*res = buf.Bytes()
+	return true
+}
+
+//export RequestHasBody
+func RequestHasBody(id int) bool {
+	request := getSessionRequest(id)
+	if request == nil {
+		return false
+	}
+
+	return request.Body != nil && request.ContentLength > 0
+}
+
+//export RequestHeaderExists
+func RequestHeaderExists(id int, name string) bool {
+	request := getSessionRequest(id)
+	if request == nil {
+		return false
+	}
+
+	// for k := range request.Header {
+	// 	fmt.Fprintf(os.Stderr, "key[%s] value[%s]\n", k, request.Header[k])
+	// }
+
 	_, headerExists := request.Header[name]
 	return headerExists
 }
 
 //export RequestGetFirstHeader
 func RequestGetFirstHeader(id int, name string, res *string) {
-	request, exists := requestMap[id]
-	if !exists {
-		return
+	request := getSessionRequest(id)
+	if request == nil {
+		return false
 	}
+
 	values, headerExists := request.Header[name]
 	if !headerExists {
 		return
 	}
 	*res = values[0]
+}
+
+//export RequestSetHeader
+func RequestSetHeader(id int, name string, value string) {
+	request := getSessionRequest(id)
+	if request == nil {
+		return false
+	}
+
+	request.Header.Set(name, value)
 }
