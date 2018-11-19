@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"syscall"
@@ -30,4 +31,8 @@ func redirectStderr(f *os.File) {
 	}
 	// SetStdHandle does not affect prior references to stderr
 	os.Stderr = f
+}
+
+func d(msg string) {
+	fmt.Fprint(os.Stderr, msg)
 }

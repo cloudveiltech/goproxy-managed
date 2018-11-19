@@ -1,9 +1,9 @@
 package main
 
 /*
-typedef void (*callback)(int id);
+typedef void (*callback)(long long id);
 
-static inline void FireCallback(void *ptr, int id)
+static inline void FireCallback(void *ptr, long long id)
 {
 	callback p = (callback)ptr;
 	p(id);
@@ -48,9 +48,8 @@ func SetOnBeforeResponseCallback(callback unsafe.Pointer) {
 
 //export Init
 func Init(port int16) {
-	// debug.SetTraceback("all")
-	// fd, _ := os.Create("d:/work/Filter-Windows/GoProxyDotNet/testapp/err.txt")
-	// redirectStderr(fd)
+	//fd, _ := os.Create("err.txt")
+	//redirectStderr(fd)
 
 	loadAndSetCa()
 	proxy = goproxy.NewProxyHttpServer()
@@ -67,6 +66,7 @@ func startHttpServer() *http.Server {
 		if err := srv.ListenAndServe(); err != nil {
 			// cannot panic, because this probably is an intentional close
 			log.Printf("Httpserver: ListenAndServe() error: %s", err)
+			Stop()
 		}
 	}()
 
@@ -84,18 +84,13 @@ func Start() {
 
 	proxy.OnRequest().DoFunc(
 		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-			//			r.Header.Set("X-GoProxy", "yxorPoG-X")
-
 			request := r
 			var response *http.Response = nil
 			if beforeRequestCallback != nil {
-				log.Printf("Request call")
-
-				session := Session{r, nil, ctx}
-				id := saveSessionToInteropMap(&session)
-				C.FireCallback(beforeRequestCallback, C.int(id))
+				session := session{r, nil}
+				id := saveSessionToInteropMap(ctx.Session, &session)
+				C.FireCallback(beforeRequestCallback, C.longlong(id))
 				removeSessionFromInteropMap(id)
-				log.Printf("Request call end")
 
 				request = session.request
 				response = session.response
@@ -105,10 +100,16 @@ func Start() {
 
 	proxy.OnResponse().DoFunc(
 		func(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
+			response := resp
 			if beforeResponseCallback != nil {
-				//	C.FireCallback(beforeResponseCallback, unsafe.Pointer(resp))
+				session := session{ctx.Req, resp}
+				id := saveSessionToInteropMap(ctx.Session, &session)
+				C.FireCallback(beforeResponseCallback, C.longlong(id))
+				removeSessionFromInteropMap(id)
+
+				response = session.response
 			}
-			return resp
+			return response
 		})
 }
 

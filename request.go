@@ -4,18 +4,26 @@ import (
 	"C"
 	"bytes"
 )
+import "io/ioutil"
 
 //export RequestGetUrl
-func RequestGetUrl(id int, result *string) {
+func RequestGetUrl(id int64, result *string) bool {
 	request := getSessionRequest(id)
+
 	if request == nil {
-		return
+		return false
 	}
-	*result = request.RequestURI
+	d("RequestGetUrl 33\n")
+	if request.URL == nil {
+		return false
+	}
+
+	*result = request.URL.String()
+	return len(*result) > 0
 }
 
 //export RequestGetBody
-func RequestGetBody(id int, res *[]byte) bool {
+func RequestGetBody(id int64, res *[]byte) bool {
 	request := getSessionRequest(id)
 	if request == nil {
 		return false
@@ -29,21 +37,37 @@ func RequestGetBody(id int, res *[]byte) bool {
 	buf.ReadFrom(request.Body)
 
 	*res = buf.Bytes()
+
+	//since we'd read all body - we need to recreate reader for client here
+	request.Body.Close()
+	request.Body = ioutil.NopCloser(bytes.NewBuffer(*res))
+
+	return true
+}
+
+//export RequestGetBodyAsString
+func RequestGetBodyAsString(id int64, res *string) bool {
+	var bytes []byte
+	if !RequestGetBody(id, &bytes) {
+		return false
+	}
+	*res = string(bytes[:])
+
 	return true
 }
 
 //export RequestHasBody
-func RequestHasBody(id int) bool {
+func RequestHasBody(id int64) bool {
 	request := getSessionRequest(id)
 	if request == nil {
 		return false
 	}
 
-	return request.Body != nil && request.ContentLength > 0
+	return request.Body != nil && request.ContentLength != 0
 }
 
 //export RequestHeaderExists
-func RequestHeaderExists(id int, name string) bool {
+func RequestHeaderExists(id int64, name string) bool {
 	request := getSessionRequest(id)
 	if request == nil {
 		return false
@@ -58,7 +82,7 @@ func RequestHeaderExists(id int, name string) bool {
 }
 
 //export RequestGetFirstHeader
-func RequestGetFirstHeader(id int, name string, res *string) {
+func RequestGetFirstHeader(id int64, name string, res *string) bool {
 	request := getSessionRequest(id)
 	if request == nil {
 		return false
@@ -66,17 +90,19 @@ func RequestGetFirstHeader(id int, name string, res *string) {
 
 	values, headerExists := request.Header[name]
 	if !headerExists {
-		return
+		return false
 	}
 	*res = values[0]
+	return true
 }
 
 //export RequestSetHeader
-func RequestSetHeader(id int, name string, value string) {
+func RequestSetHeader(id int64, name string, value string) bool {
 	request := getSessionRequest(id)
 	if request == nil {
 		return false
 	}
 
 	request.Header.Set(name, value)
+	return true
 }
