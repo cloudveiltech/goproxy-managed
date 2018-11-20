@@ -25,3 +25,4 @@ func lastcontinuehandler(info *exceptionrecord, r *context, gp *g) int32 {
 - Compiled dll is placed to `testapp/proxy.dll`
 - All interaction samples are place into `Form1.cs`
 - Path to Dll can be altered in `GoproxyWrapper.Const` class
+- All wrapper classes is placed into `app/GoproxyWrapper`
