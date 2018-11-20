@@ -13,7 +13,9 @@ static inline void FireCallback(void *ptr, long long id)
 import "C"
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"time"
 	"unsafe"
 
@@ -48,8 +50,8 @@ func SetOnBeforeResponseCallback(callback unsafe.Pointer) {
 
 //export Init
 func Init(port int16) {
-	//fd, _ := os.Create("err.txt")
-	//redirectStderr(fd)
+	fd, _ := os.Create("err.txt")
+	redirectStderr(fd)
 
 	loadAndSetCa()
 	proxy = goproxy.NewProxyHttpServer()
@@ -66,7 +68,7 @@ func startHttpServer() *http.Server {
 		if err := srv.ListenAndServe(); err != nil {
 			// cannot panic, because this probably is an intentional close
 			log.Printf("Httpserver: ListenAndServe() error: %s", err)
-			Stop()
+			server = nil
 		}
 	}()
 
@@ -115,7 +117,8 @@ func Start() {
 
 //export Stop
 func Stop() {
-	server.Shutdown(nil)
+	context, _ := context.WithTimeout(context.Background(), 1*time.Second)
+	server.Shutdown(context)
 	server = nil
 }
 
