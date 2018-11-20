@@ -19,7 +19,7 @@ func lastcontinuehandler(info *exceptionrecord, r *context, gp *g) int32 {
 	return _EXCEPTION_CONTINUE_SEARCH //this is new line. We had to pass all of this to .NET handler so debugging would work in MSVS
  ```
 
-- custom certificate should be placed in the same directory as dll file with names `cert.pem` and `key.pem`
+- Custom certificate should be placed in the same directory as dll file with names `cert.pem` and `key.pem`
 - C header with all APIs you can see in `proxy.h` file
 - To build this library just run `build.bat`
 - Compiled dll is placed to `testapp/proxy.dll`
