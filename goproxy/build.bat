@@ -1,12 +1,11 @@
-go get gopkg.in/elazarl/goproxy.v1
-
-mkdir bin
-mkdir bin/x86
-mkdir bin/x64
-
 set GOARCH=amd64
-go build -ldflags "-s -w" --buildmode=c-shared -o bin/x64/proxy.dll
+set GOPROXY_BIN=bin\x64
+set GOPROXY_GOROOT=C:\Go
+set GOPROXY_PATH=C:\Go\bin
+.\build-internal.bat
 
 set GOARCH=386
-go build -ldflags "-s -w" --buildmode=c-shared -o bin/x86/proxy.dll
-
+set GOPROXY_BIN=bin\x86
+set GOPROXY_GOROOT=C:\go32
+set GOPROXY_PATH=C:\go32\bin
+.\build-internal.bat

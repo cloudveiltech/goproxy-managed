@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <Version>0.1.2</Version>
+    <Authors>Dmitriy Goraschenko</Authors>
+    <Company>CloudVeil Technology, Inc.</Company>
+    <PackageId>CloudVeil.GoProxyWrapper</PackageId>
+    <Description>This is a P/Invoke .NET wrapper for goproxy.</Description>
+    <PackageProjectUrl>https://github.com/cloudveiltech/goproxy-managed</PackageProjectUrl>
+  </PropertyGroup>
+
+</Project>

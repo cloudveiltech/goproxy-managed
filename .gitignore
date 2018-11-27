@@ -1,4 +1,8 @@
 /testapp/err.txt
 /app/err.txt
 
+obj/
 bin/
+
+.vs/
+
