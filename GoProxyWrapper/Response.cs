@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System.Collections;
+using System.Collections.Generic;
 
 namespace GoproxyWrapper
 {
@@ -54,12 +55,42 @@ namespace GoproxyWrapper
             }
         }
 
-        public class HeaderCollection
+        public class HeaderCollection : IEnumerable<Header>
         {
             private long responseHandle;
+            private List<Header> marshalledHeaders;
+
             public HeaderCollection(long responseHandle)
             {
                 this.responseHandle = responseHandle;
+            }
+
+            private List<Header> Headers
+            {
+                get
+                {
+                    if (marshalledHeaders != null)
+                    {
+                        return marshalledHeaders;
+                    }
+
+                    GoString s = new GoString();
+                    marshalledHeaders = new List<Header>();
+
+                    if(ResponsetNativeWrapper.ResponseGetHeaders(responseHandle, out s) == 0)
+                    {
+                        return marshalledHeaders;
+                    }
+
+                    string[] headers = s.AsString.Split(new string[] { "\r\n" }, System.StringSplitOptions.RemoveEmptyEntries);
+
+                    for (int i = 0; i < headers.Length; i++)
+                    {
+                        marshalledHeaders.Add(new Header(headers[i]));
+                    }
+
+                    return marshalledHeaders;
+                }
             }
 
             public Header GetFirstHeader(string name)
@@ -75,7 +106,7 @@ namespace GoproxyWrapper
                 }
             }
 
-            public bool HeaderExists(string name)
+            public bool IsHeaderExist(string name)
             {
                 return ResponsetNativeWrapper.ResponseHeaderExists(responseHandle, GoString.FromString(name));
             }
@@ -83,11 +114,23 @@ namespace GoproxyWrapper
             public void SetHeader(string name, string value)
             {
                 ResponsetNativeWrapper.ResponseSetHeader(responseHandle, name, value);
+                marshalledHeaders = null;
             }
 
             public void SetHeader(Header header)
             {
                 ResponsetNativeWrapper.ResponseSetHeader(responseHandle, header.Name, header.Value);
+                marshalledHeaders = null;
+            }
+
+            public IEnumerator<Header> GetEnumerator()
+            {
+                return Headers.GetEnumerator();
+            }
+
+            IEnumerator IEnumerable.GetEnumerator()
+            {
+                return GetEnumerator();
             }
         }
     }

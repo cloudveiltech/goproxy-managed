@@ -134,6 +134,9 @@ namespace GoproxyWrapper
 
         [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.StdCall)]
         public static extern bool RequestSetHeader(long handle, string name, string value);
+
+        [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.StdCall)]
+        public static extern int RequestGetHeaders(long handle, out GoString res);
     }
 
     [SuppressUnmanagedCodeSecurity]
@@ -159,6 +162,9 @@ namespace GoproxyWrapper
 
         [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.StdCall)]
         public static extern bool CreateResponse(long handle, int status, GoString contentType, GoString body);
+
+        [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.StdCall)]
+        public static extern int ResponseGetHeaders(long handle, out GoString res);
     }
 }
 
