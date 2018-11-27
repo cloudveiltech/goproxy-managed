@@ -40,7 +40,7 @@ namespace testapp
 
         private void AppendLog(string log)
         {
-          //  Debug.WriteLine(log);
+            Debug.WriteLine(log);
             logView.Invoke((MethodInvoker)delegate
             {
                 logView.AppendText(log);
@@ -50,8 +50,14 @@ namespace testapp
         private void Instance_BeforeResponse(Session session)
         {
             AppendLog("Response " + session.Request.Url + "\r\n");
-/*
-            /**Response headers*/
+
+            foreach (Header h in session.Response.Headers)
+            {
+                AppendLog(h.RawValue + "\r\n");
+            }
+
+            /*
+                        /**Response headers*/
             // var exists = session.Response.Headers.IsHeaderExist("Content-Type");
             // AppendLog("Content-Type exists: " + exists + "\r\n");
 
@@ -87,7 +93,11 @@ namespace testapp
             AppendLog("Request " + session.Request.Url + "\r\n");
 
             //      **Request headers**
-           
+  /*          foreach (Header h in session.Request.Headers)
+            {
+                AppendLog(h.RawValue + "\r\n");
+            }
+*/
             /*     bool exists = session.Request.Headers.IsHeaderExist("X-TEST-HEADER");
                   AppendLog("X-TEST-HEADER exists: " + exists + "\r\n");
             /*
@@ -112,8 +122,8 @@ namespace testapp
 
 
             /**custom response*/
-            
-            if(session.Request.Url.Contains("forum"))
+
+            if (session.Request.Url.Contains("forum"))
             {
                 session.SendCustomResponse(Session.FORBIDDEN, Session.CONTENT_TYPE_HTML, "<b>This page is blocked by GoProxy Wrapper</b>");
             }

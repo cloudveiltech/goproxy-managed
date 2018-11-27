@@ -8,6 +8,11 @@
             Value = value;
         }
 
+        public Header(string rawValue)
+        {
+            RawValue = rawValue;
+        }
+
         public string Name
         {
             get;

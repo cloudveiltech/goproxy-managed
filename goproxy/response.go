@@ -6,6 +6,7 @@ import (
 import (
 	"bytes"
 	"io/ioutil"
+	"strings"
 
 	goproxy "gopkg.in/elazarl/goproxy.v1"
 )
@@ -99,6 +100,23 @@ func ResponseSetHeader(id int64, name string, value string) bool {
 
 	response.Header.Set(name, value)
 	return true
+}
+
+//export ResponseGetHeaders
+func ResponseGetHeaders(id int64, keys *string) int {
+	response := getSessionResponse(id)
+	if response == nil {
+		return 0
+	}
+	var result strings.Builder
+	for key, v := range response.Header {
+		for _, value := range v {
+			result.WriteString(key + ": " + value + "\r\n")
+		}
+	}
+
+	*keys = result.String()
+	return len(response.Header)
 }
 
 //export CreateResponse

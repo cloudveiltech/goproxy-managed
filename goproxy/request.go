@@ -4,7 +4,10 @@ import (
 	"C"
 	"bytes"
 )
-import "io/ioutil"
+import (
+	"io/ioutil"
+	"strings"
+)
 
 //export RequestGetUrl
 func RequestGetUrl(id int64, result *string) bool {
@@ -105,4 +108,22 @@ func RequestSetHeader(id int64, name string, value string) bool {
 
 	request.Header.Set(name, value)
 	return true
+}
+
+//export RequestGetHeaders
+func RequestGetHeaders(id int64, keys *string) int {
+	request := getSessionRequest(id)
+	if request == nil {
+		return 0
+	}
+	var result strings.Builder
+	for key, v := range request.Header {
+		for _, value := range v {
+			result.WriteString(key + ": " + value + "\r\n")
+		}
+	}
+
+	*keys = result.String()
+
+	return len(request.Header)
 }
