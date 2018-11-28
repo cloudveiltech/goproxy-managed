@@ -44,12 +44,12 @@ $msbuildPath = Find-MsBuild
 $packageIdNode = Get-XmlNode -XmlDocument $proj -NodePath "Project.PropertyGroup.PackageId"
 
 if($packageIdNode -eq $null) {
-    $packageId = $proj.Project.PropertyGroup.Title[0]
+    $packageId = $proj.Project.PropertyGroup.Title
 } else {
-    $packageId = $proj.Project.PropertyGroup.PackageId[0]
+    $packageId = $proj.Project.PropertyGroup.PackageId
 }
 
-$version = $proj.Project.PropertyGroup.Version[0]
+$version = $proj.Project.PropertyGroup.Version
 
 & $msbuildPath /property:Configuration=Release $projectFilePath
 & $msbuildPath /property:Configuration=Release /t:pack $projectFilePath

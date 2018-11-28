@@ -13,12 +13,12 @@ var (
 	caKey  []byte = goproxy.CA_KEY
 )
 
-func loadAndSetCa() {
-	cert, err := ioutil.ReadFile("cert.pem")
+func loadAndSetCa(certFile, keyFile string) {
+	cert, err := ioutil.ReadFile(certFile)
 	if err != nil {
 		return
 	}
-	key, err := ioutil.ReadFile("key.pem")
+	key, err := ioutil.ReadFile(keyFile)
 	if err != nil {
 		return
 	}

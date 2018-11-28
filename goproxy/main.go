@@ -49,11 +49,11 @@ func SetOnBeforeResponseCallback(callback unsafe.Pointer) {
 }
 
 //export Init
-func Init(port int16) {
+func Init(port int16, certFile string, keyFile string) {
 	fd, _ := os.Create("err.txt")
 	redirectStderr(fd)
 
-	loadAndSetCa()
+	loadAndSetCa(certFile, keyFile)
 	proxy = goproxy.NewProxyHttpServer()
 	proxy.Verbose = true
 	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
@@ -139,7 +139,7 @@ func main() {
 func test() {
 	log.Printf("main: starting HTTP server")
 
-	Init(8081)
+	Init(8081, "cert.pem", "key.pem")
 	Start()
 
 	log.Printf("main: serving for 10 seconds")
