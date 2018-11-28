@@ -27,6 +27,7 @@ namespace GoproxyWrapper
 
             ProxyNativeWrapper.SetOnBeforeRequestCallback(onBeforeRequestDelegate);
             ProxyNativeWrapper.SetOnBeforeResponseCallback(onBeforeResponseDelegate);
+
             ProxyNativeWrapper.Init(portNumber, GoString.FromString(certFile), GoString.FromString(keyFile));
         }
 

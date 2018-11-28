@@ -36,22 +36,41 @@ namespace GoproxyWrapper
         {
             get
             {
-                return Marshal.PtrToStringAnsi(data, length);
+                return Marshal.PtrToStringAnsi(data, lengthAsInt);
             }
             set
             {
+                if(IntPtr.Size == 8)
+                {
+
+                }
                 data = Marshal.StringToHGlobalAnsi(value);
-                length = value.Length;
+                lengthAsInt = value.Length;
             }
         }
-        public int length;
+
+        // Using IntPtr for length because using Int32 in a 64-bit environment causes length corruption.
+        public IntPtr length;
+
+        public int lengthAsInt
+        {
+            get
+            {
+                return length.ToInt32();
+            }
+
+            set
+            {
+                length = new IntPtr(value);
+            }
+        }
 
         public byte[] AsBytes
         {
             get
             {
-                byte[] buffer = new byte[length];
-                Marshal.Copy(data, buffer, 0, length);
+                byte[] buffer = new byte[lengthAsInt];
+                Marshal.Copy(data, buffer, 0, lengthAsInt);
                 return buffer;
             }
 
@@ -60,7 +79,7 @@ namespace GoproxyWrapper
                 data = Marshal.AllocHGlobal(value.Length);
                 Marshal.Copy(value, 0, data, value.Length);
 
-                length = value.Length;
+                lengthAsInt = value.Length;
             }
         }
     }
