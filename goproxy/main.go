@@ -53,9 +53,11 @@ func Init(port int16, certFile string, keyFile string) {
 	fd, _ := os.Create("err.txt")
 	redirectStderr(fd)
 
+	fmt.Fprintf(os.Stderr, "certFilePath size = %d", len(certFile))
+
 	loadAndSetCa(certFile, keyFile)
 	proxy = goproxy.NewProxyHttpServer()
-	proxy.Verbose = true
+	//proxy.Verbose = true
 	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
 	config.port = port
 }
@@ -86,6 +88,8 @@ func Start() {
 
 	proxy.OnRequest().DoFunc(
 		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+			startTime := time.Now()
+
 			request := r
 			var response *http.Response = nil
 			if beforeRequestCallback != nil {
@@ -97,11 +101,18 @@ func Start() {
 				request = session.request
 				response = session.response
 			}
+
+			if time.Since(startTime) > 1 { // Cuts out all 0 second requests.
+				fmt.Fprintf(os.Stderr, "OnRequest||%v||%s\n", time.Since(startTime), request.URL)
+			}
+
 			return request, response
 		})
 
 	proxy.OnResponse().DoFunc(
 		func(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
+			startTime := time.Now()
+
 			response := resp
 			if beforeResponseCallback != nil {
 				session := session{ctx.Req, resp}
@@ -111,6 +122,11 @@ func Start() {
 
 				response = session.response
 			}
+
+			if time.Since(startTime) > 1 {
+				fmt.Fprintf(os.Stderr, "OnResponse||%v||%s\n", time.Since(startTime), ctx.Req.URL)				
+			}
+
 			return response
 		})
 }
