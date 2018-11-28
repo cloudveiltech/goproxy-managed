@@ -106,7 +106,7 @@ namespace GoproxyWrapper
                 }
             }
 
-            public bool IsHeaderExist(string name)
+            public bool HeaderExists(string name)
             {
                 return ResponsetNativeWrapper.ResponseHeaderExists(responseHandle, GoString.FromString(name));
             }

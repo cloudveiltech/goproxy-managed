@@ -12,7 +12,7 @@ REM   %GOPROXY_PATH%
 
 mkdir %GOPROXY_BIN%
 
-%GOPROXY_GOROOT%\go build -ldflags "-s -w" --buildmode=c-shared -o bin\x64\proxy.dll
+%GOPROXY_PATH%\go build -ldflags "-s -w" --buildmode=c-shared -o bin\x64\proxy.dll
 
 set OLD_GOROOT=%GOROOT%
 set OLD_GOPATH=%GOPATH%
