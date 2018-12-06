@@ -17,7 +17,7 @@ set GOPATH=%GOPROXY_GOPATH%
 
 mkdir %GOPROXY_BIN%
 
-%GOPROXY_PATH%\go build -ldflags "-s -w" --buildmode=c-shared -o bin\x64\proxy.dll
+%GOPROXY_PATH%\go build -x -ldflags "-s -w" --buildmode=c-shared -o bin\x64\proxy.dll
 
 set GOROOT=%OLD_GOROOT%
 set GOPATH=%OLD_GOPATH%
