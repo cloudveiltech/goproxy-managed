@@ -109,7 +109,7 @@ namespace GoproxyWrapper
 
 
         [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.StdCall)]
-        public static extern void Init(int portNumber, GoString certFile, GoString keyFile);
+        public static extern void Init(int httpPortNumber, int httpsPortNumber, GoString certFile, GoString keyFile);
 
         [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.StdCall)]
         public static extern void Start();

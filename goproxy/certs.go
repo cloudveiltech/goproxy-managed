@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"io/ioutil"
+	"log"
 
 	goproxy "gopkg.in/elazarl/goproxy.v1"
 )
@@ -16,10 +17,12 @@ var (
 func loadAndSetCa(certFile, keyFile string) {
 	cert, err := ioutil.ReadFile(certFile)
 	if err != nil {
+		log.Fatalf("Can't read cert file")
 		return
 	}
 	key, err := ioutil.ReadFile(keyFile)
 	if err != nil {
+		log.Fatalf("Can't read cert key file")
 		return
 	}
 
@@ -31,9 +34,11 @@ func loadAndSetCa(certFile, keyFile string) {
 func setCA(caCert, caKey []byte) error {
 	goproxyCa, err := tls.X509KeyPair(caCert, caKey)
 	if err != nil {
+		log.Fatalf("Can't load cert key/file")
 		return err
 	}
 	if goproxyCa.Leaf, err = x509.ParseCertificate(goproxyCa.Certificate[0]); err != nil {
+		log.Fatalf("Can't parse cert key/file")
 		return err
 	}
 	goproxy.GoproxyCa = goproxyCa
