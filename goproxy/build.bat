@@ -1,3 +1,9 @@
+set OLD_PATH=%PATH%
+
+set BASE_PATH=%SystemRoot%;%SystemRoot%\System32
+
+set PATH=%BASE_PATH%;C:\Go\bin;C:\msys64\mingw64\bin
+
 set GOARCH=amd64
 set GOPROXY_BIN=bin\x64
 set GOPROXY_GOROOT=C:\Go
@@ -8,11 +14,12 @@ set CC=C:\msys64\mingw64\bin\gcc
 set CGO_ENABLED=1
 call build-internal.bat
 
+set PATH=%BASE_PATH%;C:\Go\bin;C:\msys64\mingw32\bin
 set GOARCH=386
 set GOPROXY_BIN=bin\x86
-REM set GOPROXY_GOROOT=C:\go32
-REM set GOPROXY_PATH=C:\go32\bin
-REM set GOPROXY_GOPATH=%UserProfile%\go32
-REM set CGO_LDFLAGS=-LC:\MinGW\lib -LC:\MinGW\lib\gcc\mingw32\4.8.1
-set CC=C:\mingw\bin\gcc
+set GOPROXY_GOPATH=%UserProfile%\go32
+set CC=C:\msys64\mingw32\bin\gcc
 call build-internal.bat
+
+set PATH=%OLD_PATH%
+

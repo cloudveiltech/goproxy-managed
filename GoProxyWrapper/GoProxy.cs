@@ -5,7 +5,10 @@ namespace GoproxyWrapper
 {
     public sealed class GoProxy
     {
-        static GoProxy() { }
+        static GoProxy()
+        {
+            
+        }
 
         private GoProxy() { }
 
