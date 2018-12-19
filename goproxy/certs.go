@@ -6,7 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 
-	goproxy "gopkg.in/elazarl/goproxy.v1"
+	"github.com/cloudveiltech/goproxy"
 )
 
 var (

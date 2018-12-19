@@ -16,9 +16,11 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
-	"os"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -26,8 +28,8 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/cloudveiltech/goproxy"
 	vhost "github.com/inconshreveable/go-vhost"
-	"gopkg.in/elazarl/goproxy.v1"
 )
 
 type Config struct {
@@ -72,9 +74,59 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 			fmt.Fprintln(w, "Cannot handle requests without Host header, e.g., HTTP 1.0")
 			return
 		}
+
 		req.URL.Scheme = "http"
 		req.URL.Host = req.Host
 		proxy.ServeHTTP(w, req)
+	})
+
+	proxy.WebSocketHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		h, ok := w.(http.Hijacker)
+		if !ok {
+			return
+		}
+
+		client, _, err := h.Hijack()
+		if err != nil {
+			log.Printf("Websocket error Hijack %s", err)
+			return
+		}
+
+		remote := dialRemote(req)
+
+		defer remote.Close()
+		defer client.Close()
+
+		log.Printf("Got websocket request %s %s", req.Host, req.URL)
+
+		req.Write(remote)
+		go func() {
+			for {
+				n, err := io.Copy(remote, client)
+				if err != nil {
+					log.Printf("Websocket error request %s", err)
+					return
+				}
+				if n == 0 {
+					log.Printf("Websocket nothing requested close")
+					return
+				}
+				time.Sleep(time.Millisecond) //reduce CPU usage due to infinite nonblocking loop
+			}
+		}()
+
+		for {
+			n, err := io.Copy(client, remote)
+			if err != nil {
+				log.Printf("Websocket error response %s", err)
+				return
+			}
+			if n == 0 {
+				log.Printf("Websocket nothing responded close")
+				return
+			}
+			time.Sleep(time.Millisecond) //reduce CPU usage due to infinite nonblocking loop
+		}
 	})
 
 	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
@@ -86,6 +138,35 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 	}
 }
 
+func dialRemote(req *http.Request) net.Conn {
+	port := ""
+	if !strings.Contains(req.URL.Host, ":") {
+		if req.URL.Scheme == "https" {
+			port = ":443"
+		} else {
+			port = ":80"
+		}
+	}
+
+	if req.URL.Scheme == "https" {
+		conf := tls.Config{
+			//InsecureSkipVerify: true,
+		}
+		remote, err := tls.Dial("tcp", req.URL.Host+port, &conf)
+		if err != nil {
+			log.Printf("Websocket error connect %s", err)
+			return nil
+		}
+		return remote
+	} else {
+		remote, err := net.Dial("tcp", req.URL.Host+port)
+		if err != nil {
+			log.Printf("Websocket error connect %s", err)
+			return nil
+		}
+		return remote
+	}
+}
 func startHttpServer() *http.Server {
 	srv := &http.Server{Addr: fmt.Sprintf(":%d", config.portHttp)}
 	srv.Handler = proxy
@@ -114,31 +195,6 @@ func Start() {
 
 	server = startHttpServer()
 
-	proxy.OnRequest().HijackConnect(func(req *http.Request, client net.Conn, ctx *goproxy.ProxyCtx) {
-		defer func() {
-			if e := recover(); e != nil {
-				ctx.Logf("error connecting to remote: %v", e)
-				client.Write([]byte("HTTP/1.1 500 Cannot reach destination\r\n\r\n"))
-			}
-			client.Close()
-		}()
-		clientBuf := bufio.NewReadWriter(bufio.NewReader(client), bufio.NewWriter(client))
-		remote, err := connectDial(proxy, "tcp", req.URL.Host)
-		panicOnError(err)
-		remoteBuf := bufio.NewReadWriter(bufio.NewReader(remote), bufio.NewWriter(remote))
-
-		for {
-			request, err := http.ReadRequest(clientBuf.Reader)
-			panicOnError(request.Write(remoteBuf))
-			panicOnError(remoteBuf.Flush())
-
-			response, err := http.ReadResponse(remoteBuf.Reader, request)
-			panicOnError(err)
-			panicOnError(response.Write(clientBuf.Writer))
-			panicOnError(clientBuf.Flush())
-		}
-	})
-
 	proxy.OnRequest().DoFunc(
 		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 			startTime := time.Now()
@@ -156,7 +212,7 @@ func Start() {
 			}
 
 			if time.Since(startTime) > 1 { // Cuts out all 0 second requests.
-				fmt.Fprintf(os.Stderr, "OnRequest||%v||%s\n", time.Since(startTime), request.URL)
+				//			fmt.Fprintf(os.Stderr, "OnRequest||%v||%s\n", time.Since(startTime), request.URL)
 			}
 
 			return request, response
@@ -177,7 +233,7 @@ func Start() {
 			}
 
 			if time.Since(startTime) > 1 {
-				fmt.Fprintf(os.Stderr, "OnResponse||%v||%s\n", time.Since(startTime), ctx.Req.URL)
+				//		fmt.Fprintf(os.Stderr, "OnResponse||%v||%s\n", time.Since(startTime), ctx.Req.URL)
 			}
 
 			return response
@@ -202,6 +258,7 @@ func runHttpsListener() {
 			log.Printf("Error accepting new connection - %v", err)
 			continue
 		}
+
 		go func(c net.Conn) {
 			tlsConn, err := vhost.TLS(c)
 			if err != nil {
@@ -220,26 +277,11 @@ func runHttpsListener() {
 				Host:   tlsConn.Host(),
 				Header: make(http.Header),
 			}
+
 			resp := dumbResponseWriter{tlsConn}
 			proxy.ServeHTTP(resp, connectReq)
 		}(c)
 	}
-}
-
-// copied/converted from https.go
-func dial(proxy *goproxy.ProxyHttpServer, network, addr string) (c net.Conn, err error) {
-	if proxy.Tr.Dial != nil {
-		return proxy.Tr.Dial(network, addr)
-	}
-	return net.Dial(network, addr)
-}
-
-// copied/converted from https.go
-func connectDial(proxy *goproxy.ProxyHttpServer, network, addr string) (c net.Conn, err error) {
-	if proxy.ConnectDial == nil {
-		return dial(proxy, network, addr)
-	}
-	return proxy.ConnectDial(network, addr)
 }
 
 type dumbResponseWriter struct {
@@ -247,7 +289,8 @@ type dumbResponseWriter struct {
 }
 
 func (dumb dumbResponseWriter) Header() http.Header {
-	panic("Header() should not be called on this ResponseWriter")
+	//	panic("Header() should not be called on this ResponseWriter")
+	return make(http.Header)
 }
 
 func (dumb dumbResponseWriter) Write(buf []byte) (int, error) {
@@ -258,17 +301,11 @@ func (dumb dumbResponseWriter) Write(buf []byte) (int, error) {
 }
 
 func (dumb dumbResponseWriter) WriteHeader(code int) {
-	panic("WriteHeader() should not be called on this ResponseWriter")
+	//	panic("WriteHeader() should not be called on this ResponseWriter")
 }
 
 func (dumb dumbResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return dumb, bufio.NewReadWriter(bufio.NewReader(dumb), bufio.NewWriter(dumb)), nil
-}
-
-func panicOnError(err error) {
-	if err != nil {
-		panic(err)
-	}
 }
 
 //export Stop
@@ -295,13 +332,11 @@ func main() {
 func test() {
 	log.Printf("main: starting HTTP server")
 
-	Init(14300, 14301, "cert.pem", "key.pem")
+	Init(14300, 14301, "rootCertificate.pem", "rootPrivateKey.pem")
 	Start()
 
 	log.Printf("main: serving for 1000 seconds")
 
-	time.Sleep(1000 * time.Second)
-
-	Stop()
-	log.Printf("main: done. exiting")
+	//	Stop()
+	//	log.Printf("main: done. exiting")
 }

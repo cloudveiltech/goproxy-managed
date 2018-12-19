@@ -16,7 +16,7 @@ func RequestGetUrl(id int64, result *string) bool {
 	if request == nil {
 		return false
 	}
-	d("RequestGetUrl 33\n")
+
 	if request.URL == nil {
 		return false
 	}
