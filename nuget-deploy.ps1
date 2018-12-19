@@ -51,6 +51,10 @@ if($packageIdNode -eq $null) {
 
 $version = $proj.Project.PropertyGroup.Version
 
+cd goproxy
+./build.bat
+cd ..
+
 & $msbuildPath /property:Configuration=Release $projectFilePath
 & $msbuildPath /property:Configuration=Release /t:pack $projectFilePath
 

@@ -1,0 +1,26 @@
+﻿<?xml version="1.0"?>
+<package >
+  <metadata>
+    <id>$id$</id>
+    <version>$version$</version>
+    <title>$title$</title>
+    <authors>$authors$</authors>
+	<license type="expression">MIT</license>
+    <projectUrl>https://github.com/cloudveiltech/goproxy-managed</projectUrl>
+    <requireLicenseAcceptance>true</requireLicenseAcceptance>
+    <description>$description$</description>
+    <releaseNotes>$releaseNotes$</releaseNotes>
+    <copyright>Copyright 2018 CloudVeil Technology, Inc.</copyright>
+    <contentFiles>
+      <files include="libraries/**/*.dll" buildAction="None" copyToOutput="true" />
+	  <files include="contentFiles\licenses\GOPROXY-LICENSE" buildAction="None" copyToOutput="true" />
+    </contentFiles>
+    <dependencies>
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="..\goproxy\bin\**\*.dll" target="contentFiles\libraries" />
+    <file src="bin\Release\netstandard2.0\GoProxyWrapper.dll" target="lib\netstandard2.0" />
+    <file src="build\**" target="build" />
+  </files>
+</package>
