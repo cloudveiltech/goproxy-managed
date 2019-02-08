@@ -31,6 +31,7 @@ func redirectStderr(f *os.File) {
 	}
 	// SetStdHandle does not affect prior references to stderr
 	os.Stderr = f
+	log.SetOutput(f)
 }
 
 func d(msg string) {

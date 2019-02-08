@@ -19,14 +19,13 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"log"
 	"net"
+	"net/http"
+	"net/url"
 	"strings"
 	"time"
 	"unsafe"
-
-	"log"
-	"net/http"
-	"net/url"
 
 	"github.com/cloudveiltech/goproxy"
 	vhost "github.com/inconshreveable/go-vhost"
@@ -61,6 +60,7 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 	//fd, _ := os.Create("err.txt")
 	//redirectStderr(fd)
 
+	goproxy.SetDefaultTlsConfig(defaultTLSConfig)
 	loadAndSetCa(certFile, keyFile)
 	proxy = goproxy.NewProxyHttpServer()
 	proxy.Verbose = false
@@ -239,7 +239,7 @@ func Start() {
 			return response
 		})
 
-	go runHttpsListener()
+	runHttpsListener()
 
 	if proxy.Verbose {
 		log.Printf("Server started")
@@ -326,13 +326,13 @@ func GetCert(res *[]byte) {
 }
 
 func main() {
-	//test()
+	test()
 }
 
 func test() {
 	log.Printf("main: starting HTTP server")
 
-	Init(14300, 14301, "rootCertificate.pem", "rootPrivateKey.pem")
+	Init(23500, 14301, "rootCertificate.pem", "rootPrivateKey.pem")
 	Start()
 
 	log.Printf("main: serving for 1000 seconds")
