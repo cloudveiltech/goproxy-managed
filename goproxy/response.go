@@ -119,6 +119,17 @@ func ResponseGetHeaders(id int64, keys *string) int {
 	return len(response.Header)
 }
 
+func ResponseGetCertLen(id int64) int {
+	response := getSessionResponse(id)
+	if response == nil {
+		return 0
+	}
+	if response.TLS == nil {
+		return 0
+	}
+	return len(response.TLS.PeerCertificates)
+}
+
 //export CreateResponse
 func CreateResponse(id int64, status int, contentType string, body string) bool {
 	session, exists := sessionMap[id]

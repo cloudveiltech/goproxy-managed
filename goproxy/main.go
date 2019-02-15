@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 	"unsafe"
+	"os"
 
 	"github.com/cloudveiltech/goproxy"
 	vhost "github.com/inconshreveable/go-vhost"
@@ -57,19 +58,21 @@ func SetOnBeforeResponseCallback(callback unsafe.Pointer) {
 
 //export Init
 func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
-	//fd, _ := os.Create("err.txt")
-	//redirectStderr(fd)
+	/*fd, _ := os.Create("C:\\err.txt")
+	redirectStderr(fd)*/
 
 	goproxy.SetDefaultTlsConfig(defaultTLSConfig)
 	loadAndSetCa(certFile, keyFile)
 	proxy = goproxy.NewProxyHttpServer()
-	proxy.Verbose = false
+	proxy.Verbose = true
 
 	if proxy.Verbose {
 		log.Printf("certFilePath %s", certFile)
 	}
 
 	proxy.NonproxyHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		log.Printf("NonproxyHandler fired.")
+
 		if req.Host == "" {
 			fmt.Fprintln(w, "Cannot handle requests without Host header, e.g., HTTP 1.0")
 			return
@@ -167,12 +170,14 @@ func dialRemote(req *http.Request) net.Conn {
 		return remote
 	}
 }
+
 func startHttpServer() *http.Server {
 	srv := &http.Server{Addr: fmt.Sprintf(":%d", config.portHttp)}
 	srv.Handler = proxy
 
 	go func() {
-		if err := srv.ListenAndServe(); err != nil {
+		err := srv.ListenAndServe()
+		if err != nil {
 			// cannot panic, because this probably is an intentional close
 			log.Printf("Httpserver: ListenAndServe() error: %s", err)
 			server = nil
@@ -193,10 +198,13 @@ func Start() {
 		log.Printf("Server is about to start")
 	}
 
+
 	server = startHttpServer()
 
 	proxy.OnRequest().DoFunc(
 		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+			log.Printf("OnRequest() in go")
+
 			startTime := time.Now()
 
 			request := r
@@ -242,21 +250,29 @@ func Start() {
 	runHttpsListener()
 
 	if proxy.Verbose {
-		log.Printf("Server started")
+		log.Printf("Server started %d, %d", config.portHttp, config.portHttps)
 	}
 }
 
 func runHttpsListener() {
+	log.Printf("runHttpsListener() %d", config.portHttps)
+
 	// listen to the TLS ClientHello but make it a CONNECT request instead
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", config.portHttps))
+	ln, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", config.portHttps))
+
+
 	if err != nil {
 		log.Fatalf("Error listening for https connections - %v", err)
+		return
 	}
+
 	for {
 		c, err := ln.Accept()
 		if err != nil {
 			log.Printf("Error accepting new connection - %v", err)
 			continue
+		} else {
+			log.Printf("Accepting new connection")
 		}
 
 		go func(c net.Conn) {
@@ -336,6 +352,18 @@ func test() {
 	Start()
 
 	log.Printf("main: serving for 1000 seconds")
+
+	var quit = false
+	var line = ""
+
+	reader := bufio.NewReader(os.Stdin)
+
+	for !quit {
+		line, _ = reader.ReadString('\n')
+		if strings.TrimSpace(line) == "quit" {
+			quit = true
+		}
+	}
 
 	//	Stop()
 	//	log.Printf("main: done. exiting")

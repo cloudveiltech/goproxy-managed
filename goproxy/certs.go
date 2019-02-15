@@ -1,10 +1,8 @@
 package main
 
 import (
-	"crypto/sha1"
 	"crypto/tls"
 	"crypto/x509"
-	"fmt"
 	"io/ioutil"
 	"log"
 
@@ -14,18 +12,19 @@ import (
 var defaultTLSConfig = &tls.Config{
 	InsecureSkipVerify: true,
 	VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-		for i := 0; i < len(rawCerts); i++ {
-			cert, err := x509.ParseCertificate(rawCerts[i])
+		// for i := 0; i < len(rawCerts); i++ {
+		// 	cert, err := x509.ParseCertificate(rawCerts[i])
 
-			if err != nil {
-				fmt.Println("Error: ", err)
-				continue
-			}
+		// 	if err != nil {
+		// 		fmt.Println("Error: ", err)
+		// 		continue
+		// 	}
 
-			hash := sha1.Sum(rawCerts[i])
-			fmt.Println("Cert data: ")
-			fmt.Println(hash, cert.DNSNames, cert.Subject, cert.Issuer)
-		}
+		// 	hash := sha1.Sum(rawCerts[i])
+		// 	fmt.Println("Cert data: ")
+		// 	fmt.Println(hash, cert.DNSNames, cert.Subject, cert.Issuer)
+		// }
+
 		return nil
 	},
 }

@@ -23,7 +23,7 @@ namespace GoproxyWrapper
         /// <param name="portNumber"></param>
         /// <param name="certFile">string containing a path to a PEM-encoded certificate file.</param>
         /// <param name="keyFile">string containing a path to a PEM-encoded key file.</param>
-        public void Init(int httpPortNumber, int httpsPortNumber, string certFile, string keyFile)
+        public void Init(short httpPortNumber, short httpsPortNumber, string certFile, string keyFile)
         {
             onBeforeRequestDelegate = new ProxyNativeWrapper.CallbackDelegate(onBeforeRequest);
             onBeforeResponseDelegate = new ProxyNativeWrapper.CallbackDelegate(onBeforeResponse);
