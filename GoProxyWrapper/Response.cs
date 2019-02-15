@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+using System.Security.Cryptography.X509Certificates;
 
 namespace GoproxyWrapper
 {
@@ -7,6 +8,8 @@ namespace GoproxyWrapper
     {
         private long handle;
         private byte[] body;
+        private List<X509Certificate2> cachedCertifcates;
+
 
         public Response(long handle)
         {
@@ -15,6 +18,37 @@ namespace GoproxyWrapper
         }
 
         public HeaderCollection Headers { get; }
+
+        public List<X509Certificate2> Certificates
+        {
+            get
+            {
+                if (cachedCertifcates != null)
+                {
+                    return cachedCertifcates;
+                }
+
+                cachedCertifcates = new List<X509Certificate2>();
+
+                int certificateCount = ResponsetNativeWrapper.ResponseGetCertificatesCount(handle);
+                if (certificateCount == 0)
+                {
+                    return cachedCertifcates;
+                }
+
+                for (int i = 0; i < certificateCount; i++)
+                {
+                    GoSlice certData = new GoSlice();
+
+                    ResponsetNativeWrapper.ResponseGetCertificate(handle, i, out certData);
+
+                    X509Certificate2 cert = new X509Certificate2(certData.bytes);
+                    
+                    cachedCertifcates.Add(cert);
+                }
+                return cachedCertifcates;
+            }
+        }
 
         public bool HasBody
         {

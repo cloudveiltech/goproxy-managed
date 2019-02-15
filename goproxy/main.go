@@ -23,10 +23,10 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 	"unsafe"
-	"os"
 
 	"github.com/cloudveiltech/goproxy"
 	vhost "github.com/inconshreveable/go-vhost"
@@ -198,7 +198,6 @@ func Start() {
 		log.Printf("Server is about to start")
 	}
 
-
 	server = startHttpServer()
 
 	proxy.OnRequest().DoFunc(
@@ -247,7 +246,7 @@ func Start() {
 			return response
 		})
 
-	runHttpsListener()
+	go runHttpsListener()
 
 	if proxy.Verbose {
 		log.Printf("Server started %d, %d", config.portHttp, config.portHttps)
@@ -259,7 +258,6 @@ func runHttpsListener() {
 
 	// listen to the TLS ClientHello but make it a CONNECT request instead
 	ln, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", config.portHttps))
-
 
 	if err != nil {
 		log.Fatalf("Error listening for https connections - %v", err)

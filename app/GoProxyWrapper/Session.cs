@@ -29,5 +29,10 @@
         {
             return ResponsetNativeWrapper.CreateResponse(handle, responseCode, GoString.FromString(contentType), GoString.FromString(body));
         }
+
+        public bool SendCustomResponse(int responseCode, string contentType, byte[] body)
+        {
+            return ResponsetNativeWrapper.CreateResponse(handle, responseCode, GoString.FromString(contentType), GoString.FromBytes(body));
+        }
     }
 }

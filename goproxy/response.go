@@ -119,7 +119,8 @@ func ResponseGetHeaders(id int64, keys *string) int {
 	return len(response.Header)
 }
 
-func ResponseGetCertLen(id int64) int {
+//export ResponseGetCertificatesCount
+func ResponseGetCertificatesCount(id int64) int {
 	response := getSessionResponse(id)
 	if response == nil {
 		return 0
@@ -128,6 +129,23 @@ func ResponseGetCertLen(id int64) int {
 		return 0
 	}
 	return len(response.TLS.PeerCertificates)
+}
+
+//export ResponseGetCertificate
+func ResponseGetCertificate(id int64, index int, certData *[]byte) int {
+	response := getSessionResponse(id)
+	if response == nil {
+		return 0
+	}
+	if response.TLS == nil {
+		return 0
+	}
+
+	cert := response.TLS.PeerCertificates[index]
+
+	*certData = cert.Raw
+
+	return 1
 }
 
 //export CreateResponse

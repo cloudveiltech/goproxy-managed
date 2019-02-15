@@ -28,10 +28,11 @@ namespace testapp
 
         private void init_Click(object sender, EventArgs e)
         {
-            int port = 0;
-            if (int.TryParse(portNumber.Text, out port))
+            short portHttp = 0;
+            short portHttps = 0;
+            if (short.TryParse(portNumberHttp.Text, out portHttp) && short.TryParse(portNumberHttps.Text, out portHttps))
             {
-                GoProxy.Instance.Init(port);
+                GoProxy.Instance.Init(portHttp, portHttps, "rootCertificate.pem", "rootPrivateKey.pem");
                 GoProxy.Instance.BeforeRequest += Instance_BeforeRequest;
                 GoProxy.Instance.BeforeResponse += Instance_BeforeResponse;
                 AppendLog("Initialized \r\n");
@@ -49,19 +50,30 @@ namespace testapp
 
         private void Instance_BeforeResponse(Session session)
         {
-            AppendLog("Response " + session.Request.Url + "\r\n");
+        //    AppendLog("Response " + session.Request.Url + "\r\n");
 
-            foreach (Header h in session.Response.Headers)
+            foreach(var cert in session.Response.Certificates)
+            {
+                //   AppendLog("Certificate https: ");
+                //   AppendLog(info.Hash);
+                //   AppendLog("\r\n Domains: ");
+                AppendLog(cert.GetNameInfo(System.Security.Cryptography.X509Certificates.X509NameType.DnsFromAlternativeName, false));
+                AppendLog("\r\n");
+                AppendLog(cert.GetNameInfo(System.Security.Cryptography.X509Certificates.X509NameType.EmailName, false));
+                AppendLog("\r\n");
+                //   AppendLog("\r\n");
+            }
+        /*    foreach (Header h in session.Response.Headers)
             {
                 AppendLog(h.RawValue + "\r\n");
             }
 
-            /*
+            
                         /**Response headers*/
             // var exists = session.Response.Headers.IsHeaderExist("Content-Type");
             // AppendLog("Content-Type exists: " + exists + "\r\n");
 
-            var contentType = session.Response.Headers.GetFirstHeader("Content-Type");
+     /*       var contentType = session.Response.Headers.GetFirstHeader("Content-Type");
             if (contentType != null)
             {
                 if (contentType.Value.Contains("mp4") || contentType.Value.Contains("image"))
@@ -85,12 +97,12 @@ namespace testapp
                         session.SendCustomResponse(Session.FORBIDDEN, Session.CONTENT_TYPE_HTML, "<b>Anasayfa</b> is blocked by GoProxy Wrapper");
                     }
                 }
-            }
+            }*/
         }
 
         private void Instance_BeforeRequest(Session session)
         {
-            AppendLog("Request " + session.Request.Url + "\r\n");
+         //   AppendLog("Request " + session.Request.Url + "\r\n");
 
             //      **Request headers**
   /*          foreach (Header h in session.Request.Headers)

@@ -15,32 +15,41 @@
 
         public string Name
         {
-            get;
-            private set;
+            get => headerParts[0];
+            private set => updateHeaderPart(0, value);
         }
 
         public string Value
         {
-            get;
-            private set;
+            get => headerParts[1];
+            private set => updateHeaderPart(1, value);
         }
 
+        private string rawValue;
+        private string[] headerParts;
         public string RawValue
         {
             get
             {
-                return Name + ": " + Value;
+                return rawValue;
             }
 
             set
             {
-                var parts = value.Split(new char[] { ':'});
-                Name = parts[0];
-                if (parts.Length > 1)
-                {
-                    Value = parts[1];
-                }
+                rawValue = value;
+                headerParts = value.Split(new char[] { ':'}, 2);
             }
+        }
+
+        private void updateHeaderPart(int part, string value)
+        {
+            if(headerParts == null || headerParts.Length < 2)
+            {
+                headerParts = new string[2];
+            }
+
+            headerParts[part] = value;
+            RawValue = headerParts[0] + ": " + headerParts[1];
         }
     }
 }

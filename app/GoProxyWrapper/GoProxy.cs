@@ -5,7 +5,10 @@ namespace GoproxyWrapper
 {
     public sealed class GoProxy
     {
-        static GoProxy() { }
+        static GoProxy()
+        {
+            
+        }
 
         private GoProxy() { }
 
@@ -14,14 +17,21 @@ namespace GoproxyWrapper
         private ProxyNativeWrapper.CallbackDelegate onBeforeRequestDelegate;
         private ProxyNativeWrapper.CallbackDelegate onBeforeResponseDelegate;
 
-        public void Init(int portNumber)
+        /// <summary>
+        /// Calls goproxy initalization and loads certificate and key from the specified files.
+        /// </summary>
+        /// <param name="portNumber"></param>
+        /// <param name="certFile">string containing a path to a PEM-encoded certificate file.</param>
+        /// <param name="keyFile">string containing a path to a PEM-encoded key file.</param>
+        public void Init(short httpPortNumber, short httpsPortNumber, string certFile, string keyFile)
         {
             onBeforeRequestDelegate = new ProxyNativeWrapper.CallbackDelegate(onBeforeRequest);
             onBeforeResponseDelegate = new ProxyNativeWrapper.CallbackDelegate(onBeforeResponse);
 
             ProxyNativeWrapper.SetOnBeforeRequestCallback(onBeforeRequestDelegate);
             ProxyNativeWrapper.SetOnBeforeResponseCallback(onBeforeResponseDelegate);
-            ProxyNativeWrapper.Init(portNumber);
+
+            ProxyNativeWrapper.Init(httpPortNumber, httpsPortNumber, GoString.FromString(certFile), GoString.FromString(keyFile));
         }
 
         private void onBeforeRequest(long handle)
