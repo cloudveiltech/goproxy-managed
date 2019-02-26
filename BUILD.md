@@ -7,7 +7,7 @@ The first thing you need is the Golang runtime and tools. Download them here and
 
 **NOTE: Might need to expand on 32-bit/64-bit explanation a bit**
 
-The next thing you need is MSYS2: https://msys2.org
+The next thing you need is MSYS2: https://www.msys2.org
 
 **NOTE:** `build.bat` assumes that MSYS2 is installed at `C:\msys64`
 
