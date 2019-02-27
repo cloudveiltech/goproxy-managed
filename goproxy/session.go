@@ -9,6 +9,7 @@ import (
 type session struct {
 	request  *http.Request
 	response *http.Response
+	isCertVerified bool
 }
 
 var (
@@ -47,4 +48,14 @@ func getSessionResponse(id int64) *http.Response {
 		return nil
 	}
 	return session.response
+}
+
+func isSessionTlsVerified(id int64) bool {
+	mapWriteLock.Lock()
+	defer mapWriteLock.Unlock()
+	session, exists := sessionMap[id]
+	if !exists {
+		return false
+	}
+	return session.isCertVerified
 }

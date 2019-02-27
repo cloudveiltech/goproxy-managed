@@ -190,6 +190,9 @@ namespace GoproxyWrapper
 
         [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.StdCall)]
         public static extern int ResponseGetCertificate(long handle, int index, out GoSlice certBytes);
+
+        [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl)]
+        public static extern bool ResponseIsTLSVerified(long handle);
     }
 }
 
