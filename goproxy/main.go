@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"log"
@@ -209,7 +210,7 @@ func Start() {
 			request := r
 			var response *http.Response = nil
 			if beforeRequestCallback != nil {
-				session := session{r, nil}
+				session := session{r, nil, false}
 				id := saveSessionToInteropMap(ctx.Session, &session)
 				C.FireCallback(beforeRequestCallback, C.longlong(id))
 				removeSessionFromInteropMap(id)
@@ -230,8 +231,37 @@ func Start() {
 			startTime := time.Now()
 
 			response := resp
+			var isVerified bool = true
+
+			if response != nil && response.TLS != nil {
+				dnsName := ctx.Req.URL.Host
+
+				for _, cert := range response.TLS.PeerCertificates {
+
+					opts := x509.VerifyOptions {
+						Roots: nil,
+						DNSName: dnsName,
+					}
+
+					_, err := cert.Verify(opts)
+
+					if err != nil {
+						isVerified = false
+						break
+					}
+				}
+			} else {
+				isVerified = false
+			}
+
+			// TODO: Call x509.Certificate.Verify
+			// We should be able to glean from that whether or not we do bad SSL page.
+			// A couple of things here:
+			// 1. Need a boolean that says IsVerified for Response
+			// 2. Need a block page that allows us to bypass it directly from the block page.
 			if beforeResponseCallback != nil {
-				session := session{ctx.Req, resp}
+				session := session{ctx.Req, resp, isVerified}
+				session.isCertVerified = isVerified
 				id := saveSessionToInteropMap(ctx.Session, &session)
 				C.FireCallback(beforeResponseCallback, C.longlong(id))
 				removeSessionFromInteropMap(id)

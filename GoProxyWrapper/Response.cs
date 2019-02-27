@@ -19,6 +19,11 @@ namespace GoproxyWrapper
 
         public HeaderCollection Headers { get; }
 
+        public bool IsCertificateVerified
+            => ResponsetNativeWrapper.ResponseIsTLSVerified(this.handle);
+
+        public int CertificateCount => ResponsetNativeWrapper.ResponseGetCertificatesCount(this.handle);
+
         public List<X509Certificate2> Certificates
         {
             get

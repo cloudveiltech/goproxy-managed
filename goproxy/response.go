@@ -131,6 +131,12 @@ func ResponseGetCertificatesCount(id int64) int {
 	return len(response.TLS.PeerCertificates)
 }
 
+//export ResponseIsTLSVerified
+func ResponseIsTLSVerified(id int64) bool {
+	isVerified := isSessionTlsVerified(id)
+	return isVerified
+}
+
 //export ResponseGetCertificate
 func ResponseGetCertificate(id int64, index int, certData *[]byte) int {
 	response := getSessionResponse(id)
