@@ -17,7 +17,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"io"
 	"log"
@@ -30,7 +29,7 @@ import (
 	"unsafe"
 
 	"github.com/cloudveiltech/goproxy"
-	vhost "github.com/inconshreveable/go-vhost"
+	"github.com/inconshreveable/go-vhost"
 )
 
 type Config struct {
@@ -234,21 +233,10 @@ func Start() {
 			var isVerified bool = true
 
 			if response != nil && response.TLS != nil {
-				dnsName := ctx.Req.URL.Host
-
-				for _, cert := range response.TLS.PeerCertificates {
-
-					opts := x509.VerifyOptions {
-						Roots: nil,
-						DNSName: dnsName,
-					}
-
-					_, err := cert.Verify(opts)
-
-					if err != nil {
-						isVerified = false
-						break
-					}
+				var err error
+				isVerified, err = verifyCerts(ctx.Req.URL.Host, response.TLS.PeerCertificates)
+				if err != nil {
+					isVerified = false
 				}
 			} else {
 				isVerified = false

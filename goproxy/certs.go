@@ -3,10 +3,9 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"github.com/cloudveiltech/goproxy"
 	"io/ioutil"
 	"log"
-
-	"github.com/cloudveiltech/goproxy"
 )
 
 var defaultTLSConfig = &tls.Config{
@@ -67,4 +66,28 @@ func setCA(caCert, caKey []byte) error {
 	goproxy.HTTPMitmConnect = &goproxy.ConnectAction{Action: goproxy.ConnectHTTPMitm, TLSConfig: goproxy.TLSConfigFromCA(&goproxyCa)}
 	goproxy.RejectConnect = &goproxy.ConnectAction{Action: goproxy.ConnectReject, TLSConfig: goproxy.TLSConfigFromCA(&goproxyCa)}
 	return nil
+}
+
+func verifyCerts(dnsName string, peerCerts []*x509.Certificate) (bool, error) {
+	opts := x509.VerifyOptions{
+		Roots: nil,
+		DNSName: dnsName,
+		Intermediates: x509.NewCertPool(),
+	}
+
+	for i, cert := range peerCerts {
+		if i == 0 {
+			continue
+		}
+
+		opts.Intermediates.AddCert(cert)
+	}
+
+	var err error
+	_, err = peerCerts[0].Verify(opts)
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
