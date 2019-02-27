@@ -1,4 +1,4 @@
-set PROXY_OUTPUT_FILE=proxy.exe
+set PROXY_OUTPUT_FILE=proxy.dll
 set OLD_PATH=%PATH%
 
 set BASE_PATH=%SystemRoot%;%SystemRoot%\System32
