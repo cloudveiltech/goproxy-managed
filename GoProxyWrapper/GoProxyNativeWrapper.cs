@@ -92,13 +92,18 @@ namespace GoproxyWrapper
         {
             get
             {
-                byte[] managedArray = new byte[length - cap];
-                Marshal.Copy(data, managedArray, cap, length - cap);
+                int length = this.length.ToInt32();
+                int cap = this.cap.ToInt32();
+
+                byte[] managedArray = new byte[length];
+                Marshal.Copy(data, managedArray, 0, length);
                 return managedArray;
             }
         }
-        public int length;
-        public int cap;
+
+        // A good way to handle the 4 byte -- 8 byte difference between x64 and x86.
+        public IntPtr length;
+        public IntPtr cap;
     }
 
     [SuppressUnmanagedCodeSecurity]

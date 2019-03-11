@@ -45,7 +45,7 @@ namespace GoproxyWrapper
                 {
                     GoSlice certData = new GoSlice();
 
-                    ResponsetNativeWrapper.ResponseGetCertificate(handle, i, out certData);
+                    ResponsetNativeWrapper.ResponseGetCertificate(handle, new System.IntPtr(i), out certData);
 
                     X509Certificate2 cert = new X509Certificate2(certData.bytes);
                     
