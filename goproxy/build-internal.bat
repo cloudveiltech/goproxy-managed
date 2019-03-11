@@ -22,8 +22,7 @@ set GOPATH=%GOPROXY_GOPATH%
 
 mkdir %GOPROXY_BIN%
 
-REM -ldflags "-s -w"
-%GOPROXY_PATH%\go build -work --buildmode=%BUILDMODE% -o %GOPROXY_BIN%\%PROXY_OUTPUT_FILE%
+%GOPROXY_PATH%\go build -ldflags "-s -w" --buildmode=%BUILDMODE% -o %GOPROXY_BIN%\%PROXY_OUTPUT_FILE%
 
 set GOROOT=%OLD_GOROOT%
 set GOPATH=%OLD_GOPATH%
