@@ -138,7 +138,7 @@ func ResponseIsTLSVerified(id int64) bool {
 }
 
 //export ResponseGetCertificate
-func ResponseGetCertificate(id int64, index int, certData *[]byte) int {
+func ResponseGetCertificate(id int64, index int32, certData *[]byte) int {
 	response := getSessionResponse(id)
 	if response == nil {
 		return 0
@@ -155,12 +155,12 @@ func ResponseGetCertificate(id int64, index int, certData *[]byte) int {
 }
 
 //export CreateResponse
-func CreateResponse(id int64, status int, contentType string, body string) bool {
+func CreateResponse(id int64, status int32, contentType string, body string) bool {
 	session, exists := sessionMap[id]
 	if !exists {
 		return false
 	}
 
-	session.response = goproxy.NewResponse(session.request, contentType, status, body)
+	session.response = goproxy.NewResponse(session.request, contentType, int(status), body)
 	return true
 }

@@ -364,7 +364,7 @@ func main() {
 func test() {
 	log.Printf("main: starting HTTP server")
 
-	Init(23500, 14301, "rootCertificate.pem", "rootPrivateKey.pem")
+	Init(14300, 14301, "rootCertificate.pem", "rootPrivateKey.pem")
 	Start()
 
 	log.Printf("main: serving for 1000 seconds")
