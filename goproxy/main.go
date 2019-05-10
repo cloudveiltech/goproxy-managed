@@ -58,8 +58,8 @@ func SetOnBeforeResponseCallback(callback unsafe.Pointer) {
 
 //export Init
 func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
-	fd, _ := os.Create("C:\\err.txt")
-	redirectStderr(fd)
+//	fd, _ := os.Create("err.txt")
+//	redirectStderr(fd)
 
 	goproxy.SetDefaultTlsConfig(defaultTLSConfig)
 	loadAndSetCa(certFile, keyFile)
@@ -96,6 +96,9 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 		}
 
 		remote := dialRemote(req)
+		if remote == nil {
+			return
+		}
 
 		defer remote.Close()
 		defer client.Close()
@@ -143,7 +146,7 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 
 func dialRemote(req *http.Request) net.Conn {
 	port := ""
-	if !strings.Contains(req.URL.Host, ":") {
+	if !strings.Contains(req.Host, ":") {		
 		if req.URL.Scheme == "https" {
 			port = ":443"
 		} else {
@@ -153,16 +156,16 @@ func dialRemote(req *http.Request) net.Conn {
 
 	if req.URL.Scheme == "https" {
 		conf := tls.Config{
-			//InsecureSkipVerify: true,
+			InsecureSkipVerify: true,
 		}
-		remote, err := tls.Dial("tcp", req.URL.Host+port, &conf)
+		remote, err := tls.Dial("tcp", req.Host + port, &conf)
 		if err != nil {
 			log.Printf("Websocket error connect %s", err)
 			return nil
 		}
 		return remote
 	} else {
-		remote, err := net.Dial("tcp", req.URL.Host+port)
+		remote, err := net.Dial("tcp", req.Host + port)
 		if err != nil {
 			log.Printf("Websocket error connect %s", err)
 			return nil
@@ -364,7 +367,7 @@ func main() {
 func test() {
 	log.Printf("main: starting HTTP server")
 
-	Init(23500, 14301, "rootCertificate.pem", "rootPrivateKey.pem")
+	Init(14300, 14301, "rootCertificate.pem", "rootPrivateKey.pem")
 	Start()
 
 	log.Printf("main: serving for 1000 seconds")
