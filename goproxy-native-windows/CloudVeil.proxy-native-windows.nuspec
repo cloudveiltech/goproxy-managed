@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package>
+  <metadata>
+    <id>CloudVeil.proxy-native-windows</id>
+    <version>0.2.37</version>
+    <title>CloudVeil Native Proxy (goproxy)</title>
+    <authors>Elazar Leibovich, Dmitriy Goraschenko</authors>
+    <license type="expression">BSD-3-Clause</license>
+    <projectUrl>https://github.com/cloudveiltech/goproxy-managed</projectUrl>
+    <requireLicenseAcceptance>true</requireLicenseAcceptance>
+    <description>A simple nuget package that wraps the proxy library for windows.</description>
+    <releaseNotes>
+    </releaseNotes>
+    <copyright>Copyright 2018 Elazar Leibovich, Wrapper copyright CloudVeil Technology, Inc.</copyright>
+    <dependencies>
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="..\goproxy\bin\**\*.dll" target="contentFiles\libraries" />
+    <file src="build\**" target="build" />
+  </files>
+</package>

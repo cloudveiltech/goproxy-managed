@@ -15,8 +15,13 @@ Function Find-MsBuild([int] $MaxVersion = 2017)
     If ((2015 -le $MaxVersion) -And (Test-Path $fallback2015Path)) { return $fallback2015Path } 
     If ((2013 -le $MaxVersion) -And (Test-Path $fallback2013Path)) { return $fallback2013Path } 
     If (Test-Path $fallbackPath) { return $fallbackPath } 
-        
-    throw "Yikes - Unable to find msbuild"
+
+    $pathMsbuild = (which msbuild)
+    if ($LastExitCode -ne 0) {
+        throw "Yikes - Unable to find msbuild"
+    } else {
+        return $pathMsbuild
+    }
 }
 
 function Get-XmlNode([ xml ]$XmlDocument, [string]$NodePath, [string]$NamespaceURI = "", [string]$NodeSeparatorCharacter = '.')
@@ -39,6 +44,9 @@ $projectFilePath = Join-Path $currentLocation "GoProxyWrapper\GoProxyWrapper.csp
 
 $msbuildPath = Find-MsBuild
 
+$_ = which dotnet
+$hasNetCli = ($LastExitCode -ne 0)
+
 [xml] $proj = Get-Content $projectFilePath
 
 $packageIdNode = Get-XmlNode -XmlDocument $proj -NodePath "Project.PropertyGroup.PackageId"
@@ -52,10 +60,23 @@ if($packageIdNode -eq $null) {
 $version = $proj.Project.PropertyGroup.Version
 
 cd goproxy
-./build.bat
+if($IsMacOS) {
+	bash build.sh
+} else {
+	./build.bat
+}
+
 cd ..
 
-& $msbuildPath /property:Configuration=Release $projectFilePath
+if ($hasNetCli) {
+    & dotnet restore $projectFilePath
+}
+
+mkdir nuget-packages
+& nuget pack goproxy-native-windows/CloudVeil.proxy-native-windows.nuspec -OutputDirectory nuget-packages
+& nuget pack goproxy-native-macos/CloudVeil.proxy-native-macos.nuspec -OutputDirectory nuget-packages
+
+& $msbuildPath /property:Configuration=Release /t:Clean,Build $projectFilePath
 & $msbuildPath /property:Configuration=Release /t:pack $projectFilePath
 
 if (-not $?) {
@@ -64,13 +85,27 @@ if (-not $?) {
 }
 
 $nupkg = Join-Path (Split-Path -Path $projectFilePath) "bin/Release/$packageId.$version.nupkg"
+$windowsPackage = "nuget-packages/CloudVeil.proxy-native-windows.$version.nupkg"
+$macosPackage = "nuget-packages/CloudVeil.proxy-native-macos.$version.nupkg"
 
-Copy-Item -Path $nupkg -Destination C:\Nuget.Local
+if($IsWindows) {
+	$destinationPath = "C:\\Nuget.Local"
+} else {
+	$destinationPath = "~/nuget.local"
+}
+
+Copy-Item -Path $nupkg -Destination $destinationPath
+Copy-Item -Path $windowsPackage -Destination $destinationPath
+Copy-Item -Path $macosPackage -Destination $destinationPath
 
 $nugetKeyPath = Join-Path $currentLocation ".nuget-apikey"
 
 if(!(Test-Path $nugetKeyPath)) {
-    $nugetKeyPath = "C:\.nuget-apikey"
+    if($IsWindows) {
+		$nugetKeyPath = "C:\.nuget-apikey"
+	} else {
+		$nugetKeyPath = "~/.nuget-apikey"
+	}
 }
 
 if(!(Test-Path $nugetKeyPath)) {
@@ -84,4 +119,6 @@ $deployNuget = Read-Host -Prompt "Do you want to upload $packageId to nuget?"
 
 if($deployNuget[0] -eq 'y') {
     dotnet nuget push $nupkg -k $apiKey -s https://api.nuget.org/v3/index.json
+	dotnet nuget push $windowsPackage -k $apiKey -s https://api.nuget.org/v3/index.json
+	dotnet nuget push $macosPackage -k $apiKey -s https://api.nuget.org/v3/index.json
 }

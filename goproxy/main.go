@@ -19,6 +19,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -27,6 +28,7 @@ import (
 	"strings"
 	"time"
 	"unsafe"
+	"runtime"
 
 	"github.com/cloudveiltech/goproxy"
 	"github.com/inconshreveable/go-vhost"
@@ -58,8 +60,23 @@ func SetOnBeforeResponseCallback(callback unsafe.Pointer) {
 
 //export Init
 func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
-	fd, _ := os.Create("C:\\err.txt")
-	redirectStderr(fd)
+	if runtime.GOOS == "windows" {
+		file, err := os.Create("C:\\err.txt")
+
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		redirectStderr(file)
+	} else {
+		file, err := ioutil.TempFile("", "err.*.log")
+
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		redirectStderr(file)
+	}
 
 	goproxy.SetDefaultTlsConfig(defaultTLSConfig)
 	loadAndSetCa(certFile, keyFile)

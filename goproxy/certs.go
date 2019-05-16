@@ -36,12 +36,14 @@ var (
 func loadAndSetCa(certFile, keyFile string) {
 	cert, err := ioutil.ReadFile(certFile)
 	if err != nil {
-		log.Fatalf("Can't read cert file")
+		log.Printf("Can't read cert file")
+		log.Fatal(err)
 		return
 	}
 	key, err := ioutil.ReadFile(keyFile)
 	if err != nil {
-		log.Fatalf("Can't read cert key file")
+		log.Printf("Can't read cert key file")
+		log.Fatal(err)
 		return
 	}
 
@@ -53,11 +55,13 @@ func loadAndSetCa(certFile, keyFile string) {
 func setCA(caCert, caKey []byte) error {
 	goproxyCa, err := tls.X509KeyPair(caCert, caKey)
 	if err != nil {
-		log.Fatalf("Can't load cert key/file")
+		log.Printf("Can't load cert/key file")
+		log.Fatal(err)
 		return err
 	}
 	if goproxyCa.Leaf, err = x509.ParseCertificate(goproxyCa.Certificate[0]); err != nil {
-		log.Fatalf("Can't parse cert key/file")
+		log.Printf("Can't parse cert key/file")
+		log.Fatal(err)
 		return err
 	}
 	goproxy.GoproxyCa = goproxyCa
