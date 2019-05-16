@@ -6,3 +6,6 @@ bin/
 
 .vs/
 .idea/
+
+.DS_Store
+*.nupkg

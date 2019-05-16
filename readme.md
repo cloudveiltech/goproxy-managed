@@ -31,3 +31,4 @@ func lastcontinuehandler(info *exceptionrecord, r *context, gp *g) int32 {
 
 * golang runtime
 * mingw-w64
+* https://docs.microsoft.com/en-us/nuget/install-nuget-client-tools#nugetexe-cli

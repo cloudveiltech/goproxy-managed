@@ -56,11 +56,18 @@ func SetOnBeforeResponseCallback(callback unsafe.Pointer) {
 	beforeResponseCallback = callback
 }
 
+//export SetProxyLogFile
+func SetProxyLogFile(logFile string) {
+	file, err := os.OpenFile(logFile, os.O_APPEND | os.O_CREATE | os.O_WRONLY, 0666)
+	if err != nil {
+		return
+	}
+
+	redirectStderr(file)
+}
+
 //export Init
 func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
-	fd, _ := os.OpenFile("C:\\err.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
-	redirectStderr(fd)
-
 	goproxy.SetDefaultTlsConfig(defaultTLSConfig)
 	loadAndSetCa(certFile, keyFile)
 	proxy = goproxy.NewProxyHttpServer()

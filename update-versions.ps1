@@ -13,6 +13,15 @@ function Get-XmlNode([ xml ]$XmlDocument, [string]$NodePath, [string]$NamespaceU
     return $node
 }
 
+function Update-Nuspec-Version([string]$nuspecPath, [string]$version) {
+	[xml]$projectFile = Get-Content $nuspecPath
+
+	$versionNode = Get-XmlNode -XmlDocument $projectFile -NodePath "package.metadata.version"
+	$versionNode.InnerText = $version
+
+	$projectFile.Save($nuspecPath)
+}
+
 $currentLocation = Get-Location
 
 $projectFilePath = "GoProxyWrapper\GoProxyWrapper.csproj"
@@ -45,3 +54,10 @@ $releaseNotesNode.InnerText = $newReleaseNotes
 
 $savePath = Join-Path $currentLocation $projectFilePath
 $projectFile.Save($savePath)
+
+$macosNativePath = Join-Path $currentLocation "goproxy-native-macos/CloudVeil.proxy-native-macos.nuspec"
+$windowsNativePath = Join-Path $currentLocation "goproxy-native-windows/CloudVeil.proxy-native-windows.nuspec"
+
+Update-Nuspec-Version -nuspecPath $macosNativePath -version $newVersion
+Update-Nuspec-Version -nuspecPath $windowsNativePath -version $newVersion
+

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Target Name="InjectProxyReference" BeforeTargets="ResolveAssemblyReferences">
+  	<ItemGroup Condition=" '$(OS)' == 'Unix' AND Exists('/Library/Frameworks') ">
+  	  <NativeReference Include="$(MSBuildThisFileDirectory)..\contentFiles\libraries\libproxy.dylib">
+  	  	<Kind>Dynamic</Kind>
+  	  	<SmartLink>False</SmartLink>
+  	  </NativeReference>
+  	</ItemGroup>
+  </Target>
+  <PropertyGroup>
+  	<ResolveAssemblyReferencesDependsOn>$(InjectProxyReference)</ResolveAssemblyReferencesDependsOn>
+  </PropertyGroup>
+</Project>
