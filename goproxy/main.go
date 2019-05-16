@@ -58,8 +58,8 @@ func SetOnBeforeResponseCallback(callback unsafe.Pointer) {
 
 //export Init
 func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
-//	fd, _ := os.Create("err.txt")
-//	redirectStderr(fd)
+	fd, _ := os.OpenFile("C:\\err.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	redirectStderr(fd)
 
 	goproxy.SetDefaultTlsConfig(defaultTLSConfig)
 	loadAndSetCa(certFile, keyFile)

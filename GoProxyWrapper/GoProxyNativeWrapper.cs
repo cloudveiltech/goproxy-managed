@@ -117,6 +117,9 @@ namespace GoproxyWrapper
         public static extern void Init(short httpPortNumber, short httpsPortNumber, GoString certFile, GoString keyFile);
 
         [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void SetProxyLogFile(bool redirect, GoString logFile);
+
+        [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl)]
         public static extern void Start();
 
         [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl)]
@@ -194,7 +197,7 @@ namespace GoproxyWrapper
         public static extern int ResponseGetCertificatesCount(long handle);
 
         [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl)]
-        public static extern int ResponseGetCertificate(long handle, int index, out GoSlice certBytes);
+        public static extern int ResponseGetCertificate(long handle, IntPtr index, out GoSlice certBytes);
 
         [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl)]
         public static extern bool ResponseIsTLSVerified(long handle);
