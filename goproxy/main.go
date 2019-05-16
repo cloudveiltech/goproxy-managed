@@ -113,6 +113,9 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 		}
 
 		remote := dialRemote(req)
+		if remote == nil {
+			return
+		}
 
 		defer remote.Close()
 		defer client.Close()
@@ -160,7 +163,7 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 
 func dialRemote(req *http.Request) net.Conn {
 	port := ""
-	if !strings.Contains(req.URL.Host, ":") {
+	if !strings.Contains(req.Host, ":") {		
 		if req.URL.Scheme == "https" {
 			port = ":443"
 		} else {
@@ -170,16 +173,16 @@ func dialRemote(req *http.Request) net.Conn {
 
 	if req.URL.Scheme == "https" {
 		conf := tls.Config{
-			//InsecureSkipVerify: true,
+			InsecureSkipVerify: true,
 		}
-		remote, err := tls.Dial("tcp", req.URL.Host+port, &conf)
+		remote, err := tls.Dial("tcp", req.Host + port, &conf)
 		if err != nil {
 			log.Printf("Websocket error connect %s", err)
 			return nil
 		}
 		return remote
 	} else {
-		remote, err := net.Dial("tcp", req.URL.Host+port)
+		remote, err := net.Dial("tcp", req.Host + port)
 		if err != nil {
 			log.Printf("Websocket error connect %s", err)
 			return nil
