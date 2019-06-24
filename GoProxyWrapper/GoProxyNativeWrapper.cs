@@ -118,7 +118,7 @@ namespace GoproxyWrapper
         public static void SetProxyLogFile(string logFile)
         {
             GoString str = GoString.FromString(logFile);
-            SetProxyLogFile(logFile);
+            SetProxyLogFile(str);
         }
 
         [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl)]
