@@ -1,12 +1,12 @@
 package main
 
 /*
-typedef void (*callback)(long long id);
+typedef int (*callback)(long long id);
 
-static inline void FireCallback(void *ptr, long long id)
+static inline int FireCallback(void *ptr, long long id)
 {
 	callback p = (callback)ptr;
-	p(id);
+	return p(id);
 }
 
 */
@@ -221,7 +221,10 @@ func Start() {
 			if beforeRequestCallback != nil {
 				session := session{r, nil, false}
 				id := saveSessionToInteropMap(ctx.Session, &session)
-				C.FireCallback(beforeRequestCallback, C.longlong(id))
+				
+				proxyNextAction := C.FireCallback(beforeRequestCallback, C.longlong(id))
+				setProxyNextAction(id, proxyNextAction)
+
 				removeSessionFromInteropMap(id)
 
 				request = session.request
@@ -250,6 +253,14 @@ func Start() {
 				}
 			} else {
 				isVerified = false
+			}
+
+			proxyNextActionInterface := ctx.Req.Context().Value(proxyNextActionKey)
+			if proxyNextActionInterface != nil {
+				proxyNextAction := proxyNextActionInterface.(int32)
+				if proxyNextAction == ProxyNextActionAllowAndIgnoreContentAndResponse {
+					return
+				}
 			}
 
 			// TODO: Call x509.Certificate.Verify
