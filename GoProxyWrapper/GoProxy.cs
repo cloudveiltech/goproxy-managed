@@ -54,6 +54,11 @@ namespace GoproxyWrapper
             ProxyNativeWrapper.Stop();
         }
 
+        public void SetProxyLogFile(string logFile)
+        {
+            ProxyNativeWrapper.SetProxyLogFile(logFile);
+        }
+
         public bool IsRunning
         {
             get { return ProxyNativeWrapper.IsRunning(); }
