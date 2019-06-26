@@ -12,19 +12,19 @@ import (
 
 const (
 	ProxyNextActionAllowAndIgnoreContent = 0
-	ProxyNextActionAllowButRequestContentInspection = 1,
-	ProxyNextActionAllowAndIgnoreContentAndResponse = 2,
+	ProxyNextActionAllowButRequestContentInspection = 1
+	ProxyNextActionAllowAndIgnoreContentAndResponse = 2
 	ProxyNextActionDropConnection = 3
 )
 
 type requestContextKey string
 const proxyNextActionKey requestContextKey = "__proxyNextAction__"
 
-func setProxyNextAction(id int64, proxyNextAction int32) void {
+func setProxyNextAction(id int64, proxyNextAction int32) {
 	request := getSessionRequest(id)
 
 	ctx := context.WithValue(request.Context(), proxyNextActionKey, proxyNextAction)
-	setSessionRequest(request.WithContext(ctx))
+	setSessionRequest(id, request.WithContext(ctx))
 }
 
 //export RequestGetUrl

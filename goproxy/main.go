@@ -222,7 +222,7 @@ func Start() {
 				session := session{r, nil, false}
 				id := saveSessionToInteropMap(ctx.Session, &session)
 				
-				proxyNextAction := C.FireCallback(beforeRequestCallback, C.longlong(id))
+				proxyNextAction := int32(C.FireCallback(beforeRequestCallback, C.longlong(id)))
 				setProxyNextAction(id, proxyNextAction)
 
 				removeSessionFromInteropMap(id)
@@ -259,7 +259,7 @@ func Start() {
 			if proxyNextActionInterface != nil {
 				proxyNextAction := proxyNextActionInterface.(int32)
 				if proxyNextAction == ProxyNextActionAllowAndIgnoreContentAndResponse {
-					return
+					return response
 				}
 			}
 

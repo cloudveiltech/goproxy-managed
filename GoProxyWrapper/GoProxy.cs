@@ -34,14 +34,16 @@ namespace GoproxyWrapper
             ProxyNativeWrapper.Init(httpPortNumber, httpsPortNumber, GoString.FromString(certFile), GoString.FromString(keyFile));
         }
 
-        private void onBeforeRequest(long handle)
+        private int onBeforeRequest(long handle)
         {
-            BeforeRequest?.Invoke(new Session(handle, new Request(handle), new Response(handle)));
+            return (int)BeforeRequest?.Invoke(new Session(handle, new Request(handle), new Response(handle)));
         }
 
-        private void onBeforeResponse(long handle)
+        private int onBeforeResponse(long handle)
         {
             BeforeResponse?.Invoke(new Session(handle, new Request(handle), new Response(handle)));
+
+            return 0;
         }
 
         public void Start()
@@ -74,7 +76,7 @@ namespace GoproxyWrapper
             }
         }
 
-        public delegate void OnBeforeRequest(Session session);
+        public delegate ProxyNextAction OnBeforeRequest(Session session);
         public delegate void OnBeforeResponse(Session session);
 
         public event OnBeforeRequest BeforeRequest;

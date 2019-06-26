@@ -110,7 +110,7 @@ namespace GoproxyWrapper
     class ProxyNativeWrapper
     {
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        public delegate void CallbackDelegate(long handle);
+        public delegate int CallbackDelegate(long handle);
 
         [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl)]
         public static extern void Init(short httpPortNumber, short httpsPortNumber, GoString certFile, GoString keyFile);

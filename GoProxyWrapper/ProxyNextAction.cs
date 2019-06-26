@@ -1,9 +1,12 @@
 using System;
 
-public enum ProxyNextAction
+namespace GoproxyWrapper
 {
-	AllowAndIgnoreContent = 0,
-	AllowButRequestContentInspection = 1,
-	AllowAndIgnoreContentAndResponse = 2,
-	DropConnection = 3
+	public enum ProxyNextAction
+	{
+		AllowAndIgnoreContent = 0,
+		AllowButRequestContentInspection = 1,
+		AllowAndIgnoreContentAndResponse = 2,
+		DropConnection = 3
+	}
 }
