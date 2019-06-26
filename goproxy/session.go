@@ -30,6 +30,17 @@ func removeSessionFromInteropMap(id int64) {
 	delete(sessionMap, id)
 }
 
+func setSessionRequest(id int64, req *http.Request) void {
+	mapWriteLock.Lock()
+	defer mapWriteLock.Unlock()
+	session, exists := sessionMap[id]
+	if !exists {
+		return
+	}
+
+	session.request = req
+}
+
 func getSessionRequest(id int64) *http.Request {
 	mapWriteLock.Lock()
 	defer mapWriteLock.Unlock()
