@@ -46,6 +46,15 @@ var (
 	beforeResponseCallback unsafe.Pointer
 )
 
+const (
+	ProxyNextActionAllowAndIgnoreContent = 0
+	ProxyNextActionAllowButRequestContentInspection = 1
+	ProxyNextActionAllowAndIgnoreContentAndResponse = 2
+	ProxyNextActionDropConnection = 3
+)
+
+const proxyNextActionKey string = "__proxyNextAction__"
+
 //export SetOnBeforeRequestCallback
 func SetOnBeforeRequestCallback(callback unsafe.Pointer) {
 	beforeRequestCallback = callback
@@ -214,6 +223,9 @@ func Start() {
 		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 			log.Printf("OnRequest() in go")
 
+			userData := make(map[string]interface{})
+			ctx.UserData = userData
+
 			startTime := time.Now()
 
 			request := r
@@ -223,7 +235,7 @@ func Start() {
 				id := saveSessionToInteropMap(ctx.Session, &session)
 				
 				proxyNextAction := int32(C.FireCallback(beforeRequestCallback, C.longlong(id)))
-				setProxyNextAction(id, proxyNextAction)
+				userData[proxyNextActionKey] = proxyNextAction
 
 				removeSessionFromInteropMap(id)
 
@@ -255,11 +267,17 @@ func Start() {
 				isVerified = false
 			}
 
-			proxyNextActionInterface := ctx.Req.Context().Value(proxyNextActionKey)
-			if proxyNextActionInterface != nil {
-				proxyNextAction := proxyNextActionInterface.(int32)
-				if proxyNextAction == ProxyNextActionAllowAndIgnoreContentAndResponse {
-					return response
+			if ctx.UserData != nil {
+				userData, ok := ctx.UserData.(map[string]interface{})
+
+				if ok {
+					proxyNextAction, valueOk := userData[proxyNextActionKey].(int32)
+
+					if valueOk {
+						if proxyNextAction == ProxyNextActionAllowAndIgnoreContentAndResponse {
+							return response
+						}
+					}
 				}
 			}
 

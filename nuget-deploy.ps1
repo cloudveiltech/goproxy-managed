@@ -39,6 +39,18 @@ function Get-XmlNode([ xml ]$XmlDocument, [string]$NodePath, [string]$NamespaceU
     return $node
 }
 
+if(!(Test-Path variable:global:IsWindows)) {
+    if($Env:OS -eq "Windows_NT") {
+        $IsWindows = $true
+        $IsMacOS = $false
+        $IsLinux = $false
+    } else {
+        $IsWindows = $false
+        $IsMacOS = $false
+        $IsLinux = $false
+    }
+}
+
 $currentLocation = Get-Location
 $projectFilePath = Join-Path $currentLocation "GoProxyWrapper\GoProxyWrapper.csproj"
 
@@ -83,7 +95,10 @@ if (-not (Test-Path nuget-packages)) {
 }
 
 & nuget pack goproxy-native-windows/CloudVeil.proxy-native-windows.nuspec -OutputDirectory nuget-packages
-& nuget pack goproxy-native-macos/CloudVeil.proxy-native-macos.nuspec -OutputDirectory nuget-packages
+
+if($IsMacOS) {
+    & nuget pack goproxy-native-macos/CloudVeil.proxy-native-macos.nuspec -OutputDirectory nuget-packages
+}
 
 & $msbuildPath /property:Configuration=Release /t:Clean,Build $projectFilePath
 & $msbuildPath /property:Configuration=Release /t:pack $projectFilePath
@@ -95,7 +110,10 @@ if (-not $?) {
 
 $nupkg = Join-Path (Split-Path -Path $projectFilePath) "bin/Release/$packageId.$version.nupkg"
 $windowsPackage = "nuget-packages/CloudVeil.proxy-native-windows.$version.nupkg"
-$macosPackage = "nuget-packages/CloudVeil.proxy-native-macos.$version.nupkg"
+
+if($IsMacOS) {
+    $macosPackage = "nuget-packages/CloudVeil.proxy-native-macos.$version.nupkg"
+}
 
 if($IsWindows) {
 	$destinationPath = "C:\\Nuget.Local"
@@ -105,19 +123,23 @@ if($IsWindows) {
 
 Copy-Item -Path $nupkg -Destination $destinationPath
 Copy-Item -Path $windowsPackage -Destination $destinationPath
-Copy-Item -Path $macosPackage -Destination $destinationPath
+
+if($IsMacOS) {
+    Copy-Item -Path $macosPackage -Destination $destinationPath
+}
 
 $nugetKeyPath = Join-Path $currentLocation ".nuget-apikey"
 
 if(!(Test-Path $nugetKeyPath)) {
     if($IsWindows) {
-		$nugetKeyPath = "C:\.nuget-apikey"
+		$nugetKeyPath = "C:\\.nuget-apikey"
 	} else {
 		$nugetKeyPath = "~/.nuget-apikey"
 	}
 }
 
 if(!(Test-Path $nugetKeyPath)) {
+    Write-Host $nugetKeyPath
     Write-Host "Please put .nuget-apikey in your project directory or in C:\ drive root in order to upload to nuget."
     exit
 }
@@ -129,5 +151,8 @@ $deployNuget = Read-Host -Prompt "Do you want to upload $packageId to nuget?"
 if($deployNuget[0] -eq 'y') {
     dotnet nuget push $nupkg -k $apiKey -s https://api.nuget.org/v3/index.json
 	dotnet nuget push $windowsPackage -k $apiKey -s https://api.nuget.org/v3/index.json
-	dotnet nuget push $macosPackage -k $apiKey -s https://api.nuget.org/v3/index.json
+
+    if($IsMacOS) {
+	    dotnet nuget push $macosPackage -k $apiKey -s https://api.nuget.org/v3/index.json
+    }
 }

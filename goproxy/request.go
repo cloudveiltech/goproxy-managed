@@ -7,25 +7,7 @@ import (
 import (
 	"io/ioutil"
 	"strings"
-	"context"
 )
-
-const (
-	ProxyNextActionAllowAndIgnoreContent = 0
-	ProxyNextActionAllowButRequestContentInspection = 1
-	ProxyNextActionAllowAndIgnoreContentAndResponse = 2
-	ProxyNextActionDropConnection = 3
-)
-
-type requestContextKey string
-const proxyNextActionKey requestContextKey = "__proxyNextAction__"
-
-func setProxyNextAction(id int64, proxyNextAction int32) {
-	request := getSessionRequest(id)
-
-	ctx := context.WithValue(request.Context(), proxyNextActionKey, proxyNextAction)
-	setSessionRequest(id, request.WithContext(ctx))
-}
 
 //export RequestGetUrl
 func RequestGetUrl(id int64, result *string) bool {
