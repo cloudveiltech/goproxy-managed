@@ -221,12 +221,8 @@ func Start() {
 
 	proxy.OnRequest().DoFunc(
 		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-			log.Printf("OnRequest() in go")
-
 			userData := make(map[string]interface{})
 			ctx.UserData = userData
-
-			startTime := time.Now()
 
 			request := r
 			var response *http.Response = nil
@@ -241,10 +237,8 @@ func Start() {
 
 				request = session.request
 				response = session.response
-			}
 
-			if time.Since(startTime) > 1 { // Cuts out all 0 second requests.
-				//			fmt.Fprintf(os.Stderr, "OnRequest||%v||%s\n", time.Since(startTime), request.URL)
+				//log.Printf("OnBeforeRequest overhead time: %v, %v", time.Since(startTime), id)
 			}
 
 			return request, response
@@ -252,8 +246,6 @@ func Start() {
 
 	proxy.OnResponse().DoFunc(
 		func(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
-			startTime := time.Now()
-
 			response := resp
 			var isVerified bool = true
 
@@ -294,10 +286,8 @@ func Start() {
 				removeSessionFromInteropMap(id)
 
 				response = session.response
-			}
 
-			if time.Since(startTime) > 1 {
-				//		fmt.Fprintf(os.Stderr, "OnResponse||%v||%s\n", time.Since(startTime), ctx.Req.URL)
+				//log.Printf("OnBeforeResponse overhead time: %v, %v", time.Since(startTime), id)
 			}
 
 			return response
@@ -326,8 +316,6 @@ func runHttpsListener() {
 		if err != nil {
 			log.Printf("Error accepting new connection - %v", err)
 			continue
-		} else {
-			log.Printf("Accepting new connection")
 		}
 
 		go func(c net.Conn) {
