@@ -5,7 +5,7 @@ import (
 	"bufio"
 	//"io/ioutil"
 	"log"
-	"strings"
+	//"strings"
 	"os"
 
 	"github.com/pmezard/adblock/adblock"
@@ -70,57 +70,9 @@ func (am *AdBlockMatcher) ParseRuleFile(fileName string, categoryId int32, listT
 	am.addRulesFromScanner(scanner, categoryId, listType)
 }
 
-/*func (am *AdBlockMatcher) ParseZipRulesFile(file *zip.File) {
-	fileDescriptor, err := file.Open()
-	defer fileDescriptor.Close()
-
-	if err != nil {
-		log.Printf("Error open zip file %s", err)
-		return
-	}
-
-	if strings.Contains(file.Name, "block.htm") {
-		am.addBlockPageFromZipFile(file)
-	} else {
-		scanner := bufio.NewScanner(fileDescriptor)
-		categoryName := file.Name
-		if strings.Contains(file.Name, ".triggers") {
-			log.Printf("Opening triggers %s", file.Name)
-			am.addPhrasesFromScanner(scanner, categoryName)
-		} else if strings.Contains(file.Name, ".bypass") {
-			am.addMatcher(categoryName, true)
-			log.Printf("Opening bypass %s", file.Name)
-			am.addRulesFromScanner(scanner, categoryName, true, Blacklist)
-		} else if strings.Contains(file.Name, ".rules") {
-			am.addMatcher(categoryName, false)
-			log.Printf("Opening rules %s", file.Name)
-			am.addRulesFromScanner(scanner, categoryName, false, Blacklist)
-		} else {
-			log.Printf("File type recognition failed %s", file.Name)
-		}
-	}
-}
-
-func (am *AdBlockMatcher) addBlockPageFromZipFile(file *zip.File) {
-	fileReader, e := file.Open()
-	if e != nil {
-		log.Printf("Error reading block page %s %s", e, file.Name)
-	}
-	defer fileReader.Close()
-	content, e := ioutil.ReadAll(fileReader)
-	if e != nil {
-		log.Printf("Error reading block page %s %s", e, file.Name)
-	}
-	am.BlockPageContent = string(content)
-}*/
-
 func (am *AdBlockMatcher) addRulesFromScanner(scanner *bufio.Scanner, categoryId int32, listType int32) {
 	for scanner.Scan() {
 		line := scanner.Text()
-
-		if listType == Whitelist && strings.Index(line, "@@") != 0 {
-			line = "@@" + line
-		}
 
 		am.AddRule(line, categoryId, listType)
 	}
