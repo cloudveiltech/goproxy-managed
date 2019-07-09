@@ -96,16 +96,20 @@ func (am *AdBlockMatcher) TestUrlBlockedWithMatcherCategories(url string, host s
 	return am.matchRulesCategories(am.BypassMatcherCategories, url, host)
 }
 
-func (am *AdBlockMatcher) TestUrlBlocked(url string, host string) []int32 {
-	res := am.TestUrlBlockedWithMatcherCategories(url, host)
+func TransformMatcherCategoryArrayToIntArray(categories []*MatcherCategory) []int32 {
+	ret := make([]int32, len(categories))
 
-	iRet := make([]int32, len(res))
-
-	for i, category := range res {
-		iRet[i] = category.CategoryId
+	for i, category := range categories {
+		ret[i] = category.CategoryId
 	}
 
-	return iRet
+	return ret
+}
+
+
+func (am *AdBlockMatcher) TestUrlBlocked(url string, host string) []int32 {
+	categories := am.TestUrlBlockedWithMatcherCategories(url, host)
+	return TransformMatcherCategoryArrayToIntArray(categories)
 }
 
 func (am *AdBlockMatcher) matchRulesCategories(matcherCategories []*MatcherCategory, url string, host string) []*MatcherCategory {
@@ -124,7 +128,7 @@ func (am *AdBlockMatcher) matchRulesCategories(matcherCategories []*MatcherCateg
 			}
 
 			if matched {
-				append(matchedCategories, matcherCategory)
+				matchedCategories = append(matchedCategories, matcherCategory)
 			}
 		}
 	}

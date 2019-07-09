@@ -1,7 +1,11 @@
 package main
 
-import "log"
 import "C"
+
+import (
+	"log"
+	"unsafe"
+)
 
 var adBlockMatcher *AdBlockMatcher
 

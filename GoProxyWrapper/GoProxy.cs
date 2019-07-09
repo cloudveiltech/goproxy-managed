@@ -1,5 +1,7 @@
-﻿using System;
+﻿using GoProxyWrapper;
+using System;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace GoproxyWrapper
 {
@@ -17,6 +19,9 @@ namespace GoproxyWrapper
         private ProxyNativeWrapper.CallbackDelegate onBeforeRequestDelegate;
         private ProxyNativeWrapper.CallbackDelegate onBeforeResponseDelegate;
 
+        private AdBlockMatcherApi.InternalAdBlockCallbackDelegate onBlacklistDelegate;
+        private AdBlockMatcherApi.InternalAdBlockCallbackDelegate onWhitelistDelegate;
+
         /// <summary>
         /// Calls goproxy initalization and loads certificate and key from the specified files.
         /// </summary>
@@ -28,10 +33,38 @@ namespace GoproxyWrapper
             onBeforeRequestDelegate = new ProxyNativeWrapper.CallbackDelegate(onBeforeRequest);
             onBeforeResponseDelegate = new ProxyNativeWrapper.CallbackDelegate(onBeforeResponse);
 
+            onBlacklistDelegate = new AdBlockMatcherApi.InternalAdBlockCallbackDelegate(onBlacklist);
+            onWhitelistDelegate = new AdBlockMatcherApi.InternalAdBlockCallbackDelegate(onWhitelist);
+
             ProxyNativeWrapper.SetOnBeforeRequestCallback(onBeforeRequestDelegate);
             ProxyNativeWrapper.SetOnBeforeResponseCallback(onBeforeResponseDelegate);
 
+            AdBlockMatcherApi.SetBlacklistCallback(onBlacklistDelegate);
+            AdBlockMatcherApi.SetWhitelistCallback(onWhitelistDelegate);
+
             ProxyNativeWrapper.Init(httpPortNumber, httpsPortNumber, GoString.FromString(certFile), GoString.FromString(keyFile));
+        }
+
+        private int onWhitelist(long handle, GoString goUrl, IntPtr categoriesPtr, int categoryLen)
+        {
+            int[] categories = new int[categoryLen];
+
+            Marshal.Copy(categoriesPtr, categories, 0, categoryLen);
+            Session session = new Session(handle, new Request(handle), new Response(handle));
+            string url = goUrl.AsString;
+
+            return Whitelisted?.Invoke(session, url, categories) ?? 0;
+        }
+
+        private int onBlacklist(long handle, GoString goUrl, IntPtr categoriesPtr, int categoryLen)
+        {
+            int[] categories = new int[categoryLen];
+
+            Marshal.Copy(categoriesPtr, categories, 0, categoryLen);
+            Session session = new Session(handle, new Request(handle), new Response(handle));
+            string url = goUrl.AsString;
+
+            return Blacklisted?.Invoke(session, url, categories) ?? 0;
         }
 
         private int onBeforeRequest(long handle)
@@ -81,5 +114,8 @@ namespace GoproxyWrapper
 
         public event OnBeforeRequest BeforeRequest;
         public event OnBeforeResponse BeforeResponse;
+
+        public event AdBlockMatcherApi.AdBlockCallbackDelegate Blacklisted;
+        public event AdBlockMatcherApi.AdBlockCallbackDelegate Whitelisted;
     }
 }

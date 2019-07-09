@@ -2,7 +2,7 @@ package main
 
 /*
 typedef int (*callback)(long long id);
-typedef int (*adBlockCallback)(long long id, GoString url, int* categories, int categoryLen);
+typedef int (*adBlockCallback)(long long id, _GoString_ url, int* categories, int categoryLen);
 
 static inline int FireCallback(void *ptr, long long id)
 {
@@ -10,7 +10,7 @@ static inline int FireCallback(void *ptr, long long id)
 	return p(id);
 }
 
-static inline int FireAdblockCallback(void* ptr, long long id, GoString url, int* categories, int categoryLen)
+static inline int FireAdblockCallback(void* ptr, long long id, _GoString_ url, int* categories, int categoryLen)
 {
 	adBlockCallback p = (adBlockCallback)ptr;
 	return p(id, url, categories, categoryLen);
@@ -250,20 +250,24 @@ func Start() {
 				return request, response
 			}
 
+			userData[proxyNextActionKey] = ProxyNextActionAllowButRequestContentInspection
+
 			// Now run our matching engine.
 			if AdBlockMatcherAreListsLoaded() {
 				// TODO: Adblock matching for headers?
 
-				url := request.URL.RequestURI()
+				url := request.URL.String()
 				host := request.URL.Hostname()
 
-				categories := TestUrlBlockedWithMatcherCategories(url, host)
+				// adBlockMatcher is in adblock_interop.go
+				categories := adBlockMatcher.TestUrlBlockedWithMatcherCategories(url, host)
 				if len(categories) > 0 {
 					if categories[0].ListType == Whitelist {
 						userData[proxyNextActionKey] = ProxyNextActionAllowAndIgnoreContentAndResponse
 
 						if onWhitelistCallback != nil {
-							C.FireAdblockCallback(onWhitelistCallback, C.longlong(id), url, categories, C.int(len(categories)))
+							categoryInts := TransformMatcherCategoryArrayToIntArray(categories)
+							C.FireAdblockCallback(onWhitelistCallback, C.longlong(id), url, (*C.int)(&categoryInts[0]), C.int(len(categoryInts)))
 
 							request = session.request
 						}
@@ -273,7 +277,8 @@ func Start() {
 						userData[proxyNextActionKey] = ProxyNextActionDropConnection
 
 						if onBlacklistCallback != nil {
-							C.FireAdblockCallback(onBlacklistCallback, C.longlong(id), url, (*C.int)(&categories[0]), C.int(len(categories)))
+							categoryInts := TransformMatcherCategoryArrayToIntArray(categories)
+							C.FireAdblockCallback(onBlacklistCallback, C.longlong(id), url, (*C.int)(&categoryInts[0]), C.int(len(categoryInts)))
 
 							request = session.request
 							response = session.response
@@ -283,6 +288,8 @@ func Start() {
 					}
 				}
 			}
+
+			return request, response
 		})
 
 	proxy.OnResponse().DoFunc(

@@ -62,37 +62,5 @@ namespace GoProxyWrapper
 
         [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl, EntryPoint = "AdBlockMatcherSetBlacklistCallback")]
         internal static extern void SetBlacklistCallback(InternalAdBlockCallbackDelegate callback);
-
-        public static void SetWhitelistCallback(AdBlockCallbackDelegate callback)
-        {
-            InternalAdBlockCallbackDelegate internalCallback = (handle, goUrl, categoriesPtr, categoryLen) =>
-            {
-                int[] categories = new int[categoryLen];
-
-                Marshal.Copy(categoriesPtr, categories, 0, categoryLen);
-                Session session = new Session(handle, new Request(handle), new Response(handle));
-                string url = goUrl.AsString;
-
-                return callback(session, url, categories);
-            };
-
-            SetWhitelistCallback(internalCallback);
-        }
-
-        public static void SetBlacklistCallback(AdBlockCallbackDelegate callback)
-        {
-            InternalAdBlockCallbackDelegate internalCallback = (handle, goUrl, categoriesPtr, categoryLen) =>
-            {
-                int[] categories = new int[categoryLen];
-
-                Marshal.Copy(categoriesPtr, categories, 0, categoryLen);
-                Session session = new Session(handle, new Request(handle), new Response(handle));
-                string url = goUrl.AsString;
-
-                return callback(session, url, categories);
-            };
-
-            SetBlacklistCallback(internalCallback);
-        }
     }
 }
