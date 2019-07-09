@@ -83,24 +83,38 @@ func (am *AdBlockMatcher) GetBlockPage(url string, category string, reason strin
 	return tagsReplacer.Replace(am.BlockPageContent)
 }
 
-func (am *AdBlockMatcher) TestUrlBlocked(url string, host string) int32 {
+func (am *AdBlockMatcher) TestUrlBlockedWithMatcherCategories(url string, host string) []*MatcherCategory {
 	res := am.matchRulesCategories(am.MatcherCategories, url, host)
-	if res >= 0 {
+	if len(res) > 0 {
 		return res
 	}
 
 	if am.bypassEnabled {
-		return -1
+		return make([]*MatcherCategory, 0)
 	}
 
 	return am.matchRulesCategories(am.BypassMatcherCategories, url, host)
 }
 
-func (am *AdBlockMatcher) matchRulesCategories(matcherCategories []*MatcherCategory, url string, host string) int32 {
+func (am *AdBlockMatcher) TestUrlBlocked(url string, host string) []int32 {
+	res := am.TestUrlBlockedWithMatcherCategories(url, host)
+
+	iRet := make([]int32, len(res))
+
+	for i, category := range res {
+		iRet[i] = category.CategoryId
+	}
+
+	return iRet
+}
+
+func (am *AdBlockMatcher) matchRulesCategories(matcherCategories []*MatcherCategory, url string, host string) []*MatcherCategory {
 	rq := &adblock.Request{
 		URL:    url,
 		Domain: host,
 	}
+
+	var matchedCategories []*MatcherCategory
 
 	for _, matcherCategory := range matcherCategories {
 		for _, matcher := range matcherCategory.Matchers {
@@ -110,12 +124,12 @@ func (am *AdBlockMatcher) matchRulesCategories(matcherCategories []*MatcherCateg
 			}
 
 			if matched {
-				return matcherCategory.CategoryId
+				append(matchedCategories, matcherCategory)
 			}
 		}
 	}
 
-	return -1
+	return matchedCategories
 }
 
 func (am *AdBlockMatcher) TestContentTypeIsFiltrable(contentType string) bool {

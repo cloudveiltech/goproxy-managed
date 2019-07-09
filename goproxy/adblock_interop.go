@@ -5,6 +5,9 @@ import "C"
 
 var adBlockMatcher *AdBlockMatcher
 
+var onWhitelistCallback unsafe.Pointer
+var onBlacklistCallback unsafe.Pointer
+
 var adBlockMatchers map[int32]*AdBlockMatcher
 
 //export AdBlockMatcherInitialize
@@ -29,7 +32,7 @@ func AdBlockMatcherLoad(fileName string) {
 }
 
 //export AdBlockMatcherTestUrlMatch
-func AdBlockMatcherTestUrlMatch(url string, host string) int32 {
+func AdBlockMatcherTestUrlMatch(url string, host string) []int32 {
 	return adBlockMatcher.TestUrlBlocked(url, host)
 }
 
@@ -42,4 +45,14 @@ func AdBlockMatcherAreListsLoaded() bool {
 	} else {
 		return len(adBlockMatcher.MatcherCategories) > 0 || len(adBlockMatcher.BypassMatcherCategories) > 0
 	}
+}
+
+//export AdBlockMatcherSetWhitelistCallback
+func AdBlockMatcherSetWhitelistCallback(callback unsafe.Pointer) {
+	onWhitelistCallback = callback
+}
+
+//export AdBlockMatcherSetBlacklistCallback
+func AdBlockMatcherSetBlacklistCallback(callback unsafe.Pointer) {
+	onBlacklistCallback = callback
 }

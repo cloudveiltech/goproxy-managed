@@ -2,11 +2,18 @@ package main
 
 /*
 typedef int (*callback)(long long id);
+typedef int (*adBlockCallback)(long long id, GoString url, int* categories, int categoryLen);
 
 static inline int FireCallback(void *ptr, long long id)
 {
 	callback p = (callback)ptr;
 	return p(id);
+}
+
+static inline int FireAdblockCallback(void* ptr, long long id, GoString url, int* categories, int categoryLen)
+{
+	adBlockCallback p = (adBlockCallback)ptr;
+	return p(id, url, categories, categoryLen);
 }
 
 */
@@ -226,22 +233,56 @@ func Start() {
 
 			request := r
 			var response *http.Response = nil
+
+			session := session{r, nil, false}
+			id := saveSessionToInteropMap(ctx.Session, &session)
+			defer removeSessionFromInteropMap(id)
+
 			if beforeRequestCallback != nil {
-				session := session{r, nil, false}
-				id := saveSessionToInteropMap(ctx.Session, &session)
-				
 				proxyNextAction := int32(C.FireCallback(beforeRequestCallback, C.longlong(id)))
 				userData[proxyNextActionKey] = proxyNextAction
 
-				removeSessionFromInteropMap(id)
-
 				request = session.request
 				response = session.response
-
-				//log.Printf("OnBeforeRequest overhead time: %v, %v", time.Since(startTime), id)
 			}
 
-			return request, response
+			if response != nil {
+				return request, response
+			}
+
+			// Now run our matching engine.
+			if AdBlockMatcherAreListsLoaded() {
+				// TODO: Adblock matching for headers?
+
+				url := request.URL.RequestURI()
+				host := request.URL.Hostname()
+
+				categories := TestUrlBlockedWithMatcherCategories(url, host)
+				if len(categories) > 0 {
+					if categories[0].ListType == Whitelist {
+						userData[proxyNextActionKey] = ProxyNextActionAllowAndIgnoreContentAndResponse
+
+						if onWhitelistCallback != nil {
+							C.FireAdblockCallback(onWhitelistCallback, C.longlong(id), url, categories, C.int(len(categories)))
+
+							request = session.request
+						}
+
+						return request, nil
+					} else if categories[0].ListType == Blacklist || categories[0].ListType == BypassList {
+						userData[proxyNextActionKey] = ProxyNextActionDropConnection
+
+						if onBlacklistCallback != nil {
+							C.FireAdblockCallback(onBlacklistCallback, C.longlong(id), url, (*C.int)(&categories[0]), C.int(len(categories)))
+
+							request = session.request
+							response = session.response
+						}
+
+						return request, response
+					}
+				}
+			}
 		})
 
 	proxy.OnResponse().DoFunc(

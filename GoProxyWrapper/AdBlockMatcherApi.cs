@@ -8,6 +8,11 @@ namespace GoProxyWrapper
 {
     public static class AdBlockMatcherApi
     {
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        internal delegate int InternalAdBlockCallbackDelegate(long handle, GoString url, IntPtr categories, int categoryLen);
+
+        public delegate int AdBlockCallbackDelegate(Session session, string url, int[] categories);
+
         [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl, EntryPoint = "AdBlockMatcherInitialize")]
         public static extern void Initialize();
 
@@ -51,5 +56,43 @@ namespace GoProxyWrapper
 
         [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl, EntryPoint = "AdBlockMatcherAreListsLoaded")]
         public static extern bool AreListsLoaded();
+
+        [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl, EntryPoint = "AdBlockMatcherSetWhitelistCallback")]
+        internal static extern void SetWhitelistCallback(InternalAdBlockCallbackDelegate callback);
+
+        [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl, EntryPoint = "AdBlockMatcherSetBlacklistCallback")]
+        internal static extern void SetBlacklistCallback(InternalAdBlockCallbackDelegate callback);
+
+        public static void SetWhitelistCallback(AdBlockCallbackDelegate callback)
+        {
+            InternalAdBlockCallbackDelegate internalCallback = (handle, goUrl, categoriesPtr, categoryLen) =>
+            {
+                int[] categories = new int[categoryLen];
+
+                Marshal.Copy(categoriesPtr, categories, 0, categoryLen);
+                Session session = new Session(handle, new Request(handle), new Response(handle));
+                string url = goUrl.AsString;
+
+                return callback(session, url, categories);
+            };
+
+            SetWhitelistCallback(internalCallback);
+        }
+
+        public static void SetBlacklistCallback(AdBlockCallbackDelegate callback)
+        {
+            InternalAdBlockCallbackDelegate internalCallback = (handle, goUrl, categoriesPtr, categoryLen) =>
+            {
+                int[] categories = new int[categoryLen];
+
+                Marshal.Copy(categoriesPtr, categories, 0, categoryLen);
+                Session session = new Session(handle, new Request(handle), new Response(handle));
+                string url = goUrl.AsString;
+
+                return callback(session, url, categories);
+            };
+
+            SetBlacklistCallback(internalCallback);
+        }
     }
 }
