@@ -47,10 +47,10 @@ var (
 )
 
 const (
-	ProxyNextActionAllowAndIgnoreContent = 0
+	ProxyNextActionAllowAndIgnoreContent            = 0
 	ProxyNextActionAllowButRequestContentInspection = 1
 	ProxyNextActionAllowAndIgnoreContentAndResponse = 2
-	ProxyNextActionDropConnection = 3
+	ProxyNextActionDropConnection                   = 3
 )
 
 const proxyNextActionKey string = "__proxyNextAction__"
@@ -67,7 +67,7 @@ func SetOnBeforeResponseCallback(callback unsafe.Pointer) {
 
 //export SetProxyLogFile
 func SetProxyLogFile(logFile string) {
-	file, err := os.OpenFile(logFile, os.O_APPEND | os.O_CREATE | os.O_WRONLY, 0666)
+	file, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
 		return
 	}
@@ -80,7 +80,16 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 	goproxy.SetDefaultTlsConfig(defaultTLSConfig)
 	loadAndSetCa(certFile, keyFile)
 	proxy = goproxy.NewProxyHttpServer()
-	proxy.Verbose = true
+
+	proxy.Tr.Dial = func(network, addr string) (c net.Conn, err error) {
+		c, err = net.Dial(network, addr)
+		if c, ok := c.(*net.TCPConn); err == nil && ok {
+			c.SetKeepAlive(true)
+		}
+		return
+	}
+
+	proxy.Verbose = false
 
 	if proxy.Verbose {
 		log.Printf("certFilePath %s", certFile)
@@ -151,7 +160,7 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 		}
 	})
 
-	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
+//	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
 	config.portHttp = portHttp
 	config.portHttps = portHttps
 
@@ -162,7 +171,7 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 
 func dialRemote(req *http.Request) net.Conn {
 	port := ""
-	if !strings.Contains(req.Host, ":") {		
+	if !strings.Contains(req.Host, ":") {
 		if req.URL.Scheme == "https" {
 			port = ":443"
 		} else {
@@ -174,14 +183,14 @@ func dialRemote(req *http.Request) net.Conn {
 		conf := tls.Config{
 			InsecureSkipVerify: true,
 		}
-		remote, err := tls.Dial("tcp", req.Host + port, &conf)
+		remote, err := tls.Dial("tcp", req.Host+port, &conf)
 		if err != nil {
 			log.Printf("Websocket error connect %s", err)
 			return nil
 		}
 		return remote
 	} else {
-		remote, err := net.Dial("tcp", req.Host + port)
+		remote, err := net.Dial("tcp", req.Host+port)
 		if err != nil {
 			log.Printf("Websocket error connect %s", err)
 			return nil
@@ -218,7 +227,7 @@ func Start() {
 	}
 
 	server = startHttpServer()
-
+	
 	proxy.OnRequest().DoFunc(
 		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 			log.Printf("OnRequest() in go")
@@ -229,76 +238,79 @@ func Start() {
 			startTime := time.Now()
 
 			request := r
-			var response *http.Response = nil
-			if beforeRequestCallback != nil {
-				session := session{r, nil, false}
-				id := saveSessionToInteropMap(ctx.Session, &session)
-				
-				proxyNextAction := int32(C.FireCallback(beforeRequestCallback, C.longlong(id)))
-				userData[proxyNextActionKey] = proxyNextAction
+				var response *http.Response = nil
+				if beforeRequestCallback != nil {
+					session := session{r, nil, false}
+					id := saveSessionToInteropMap(ctx.Session, &session)
 
-				removeSessionFromInteropMap(id)
+					proxyNextAction := int32(C.FireCallback(beforeRequestCallback, C.longlong(id)))
+					userData[proxyNextActionKey] = proxyNextAction
 
-				request = session.request
-				response = session.response
-			}
+					removeSessionFromInteropMap(id)
 
-			if time.Since(startTime) > 1 { // Cuts out all 0 second requests.
-				//			fmt.Fprintf(os.Stderr, "OnRequest||%v||%s\n", time.Since(startTime), request.URL)
-			}
+					request = session.request
+					response = session.response
+				}
 
+				if time.Since(startTime) > 1 { // Cuts out all 0 second requests.
+					//			fmt.Fprintf(os.Stderr, "OnRequest||%v||%s\n", time.Since(startTime), request.URL)
+				}
 			return request, response
 		})
 
 	proxy.OnResponse().DoFunc(
 		func(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
-			startTime := time.Now()
+				startTime := time.Now()
 
-			response := resp
-			var isVerified bool = true
+				response := resp
+				if !strings.Contains(resp.Header.Get("Content-Type"), "text") && !strings.Contains(resp.Header.Get("Content-Type"), "json") {
+					return resp
+				}
 
-			if response != nil && response.TLS != nil {
-				var err error
-				isVerified, err = verifyCerts(ctx.Req.URL.Host, response.TLS.PeerCertificates)
-				if err != nil {
+				var isVerified bool = true
+
+				if response != nil && response.TLS != nil {
+					var err error
+					isVerified, err = verifyCerts(ctx.Req.URL.Host, response.TLS.PeerCertificates)
+					if err != nil {
+						isVerified = false
+					}
+				} else {
 					isVerified = false
 				}
-			} else {
-				isVerified = false
-			}
 
-			if ctx.UserData != nil {
-				userData, ok := ctx.UserData.(map[string]interface{})
+				if ctx.UserData != nil {
+					userData, ok := ctx.UserData.(map[string]interface{})
 
-				if ok {
-					proxyNextAction, valueOk := userData[proxyNextActionKey].(int32)
+					if ok {
+						proxyNextAction, valueOk := userData[proxyNextActionKey].(int32)
 
-					if valueOk {
-						if proxyNextAction == ProxyNextActionAllowAndIgnoreContentAndResponse {
-							return response
+						if valueOk {
+							if proxyNextAction == ProxyNextActionAllowAndIgnoreContentAndResponse {
+								return response
+							}
 						}
 					}
 				}
-			}
 
-			// TODO: Call x509.Certificate.Verify
-			// We should be able to glean from that whether or not we do bad SSL page.
-			// A couple of things here:
-			// 1. Need a boolean that says IsVerified for Response
-			// 2. Need a block page that allows us to bypass it directly from the block page.
-			if beforeResponseCallback != nil {
-				session := session{ctx.Req, resp, isVerified}
-				session.isCertVerified = isVerified
-				id := saveSessionToInteropMap(ctx.Session, &session)
-				C.FireCallback(beforeResponseCallback, C.longlong(id))
-				removeSessionFromInteropMap(id)
+				// TODO: Call x509.Certificate.Verify
+				// We should be able to glean from that whether or not we do bad SSL page.
+				// A couple of things here:
+				// 1. Need a boolean that says IsVerified for Response
+				// 2. Need a block page that allows us to bypass it directly from the block page.
+				if beforeResponseCallback != nil {
+					session := session{ctx.Req, resp, isVerified}
+					session.isCertVerified = isVerified
+					id := saveSessionToInteropMap(ctx.Session, &session)
+					C.FireCallback(beforeResponseCallback, C.longlong(id))
+					removeSessionFromInteropMap(id)
 
-				response = session.response
-			}
+					response = session.response
+				}
 
-			if time.Since(startTime) > 1 {
-				//		fmt.Fprintf(os.Stderr, "OnResponse||%v||%s\n", time.Since(startTime), ctx.Req.URL)
-			}
+				if time.Since(startTime) > 1 {
+					//		fmt.Fprintf(os.Stderr, "OnResponse||%v||%s\n", time.Since(startTime), ctx.Req.URL)
+				}
 
 			return response
 		})
@@ -413,6 +425,14 @@ func test() {
 
 	reader := bufio.NewReader(os.Stdin)
 
+	
+	// f, err := os.Create("trace.out")
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// defer f.Close()
+	// trace.Start(f)
+	// defer trace.Stop()
 	for !quit {
 		line, _ = reader.ReadString('\n')
 		if strings.TrimSpace(line) == "quit" {
