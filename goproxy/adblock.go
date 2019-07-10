@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/pmezard/adblock/adblock"
+	"github.com/kfreezen/adblock/adblock"
 )
 
 const MAX_RULES_PER_MATCHER = 1000
@@ -83,8 +83,8 @@ func (am *AdBlockMatcher) GetBlockPage(url string, category string, reason strin
 	return tagsReplacer.Replace(am.BlockPageContent)
 }
 
-func (am *AdBlockMatcher) TestUrlBlockedWithMatcherCategories(url string, host string) []*MatcherCategory {
-	res := am.matchRulesCategories(am.MatcherCategories, url, host)
+func (am *AdBlockMatcher) TestUrlBlockedWithMatcherCategories(url string, host string, headers map[string][]string) []*MatcherCategory {
+	res := am.matchRulesCategories(am.MatcherCategories, url, host, headers)
 	if len(res) > 0 {
 		return res
 	}
@@ -93,7 +93,7 @@ func (am *AdBlockMatcher) TestUrlBlockedWithMatcherCategories(url string, host s
 		return make([]*MatcherCategory, 0)
 	}
 
-	return am.matchRulesCategories(am.BypassMatcherCategories, url, host)
+	return am.matchRulesCategories(am.BypassMatcherCategories, url, host, headers)
 }
 
 func TransformMatcherCategoryArrayToIntArray(categories []*MatcherCategory) []int32 {
@@ -107,15 +107,16 @@ func TransformMatcherCategoryArrayToIntArray(categories []*MatcherCategory) []in
 }
 
 
-func (am *AdBlockMatcher) TestUrlBlocked(url string, host string) []int32 {
-	categories := am.TestUrlBlockedWithMatcherCategories(url, host)
+func (am *AdBlockMatcher) TestUrlBlocked(url string, host string, headers map[string][]string) []int32 {
+	categories := am.TestUrlBlockedWithMatcherCategories(url, host, headers)
 	return TransformMatcherCategoryArrayToIntArray(categories)
 }
 
-func (am *AdBlockMatcher) matchRulesCategories(matcherCategories []*MatcherCategory, url string, host string) []*MatcherCategory {
+func (am *AdBlockMatcher) matchRulesCategories(matcherCategories []*MatcherCategory, url string, host string, headers map[string][]string) []*MatcherCategory {
 	rq := &adblock.Request{
 		URL:    url,
 		Domain: host,
+		Header: headers,
 	}
 
 	var matchedCategories []*MatcherCategory

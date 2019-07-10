@@ -44,14 +44,15 @@ namespace GoProxyWrapper
         }
 
         [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl, EntryPoint = "AdBlockMatcherTestUrlMatch")]
-        internal static extern int TestUrlMatch(GoString url, GoString host);
+        internal static extern int TestUrlMatch(GoString url, GoString host, GoString headersRaw);
 
-        public static int TestUrlMatch(string url, string host)
+        public static int TestUrlMatch(string url, string host, string headersRaw)
         {
             GoString gsUrl = GoString.FromString(url);
             GoString gsHost = GoString.FromString(host);
+            GoString gsHeadersRaw = GoString.FromString(headersRaw);
 
-            return TestUrlMatch(gsUrl, gsHost);
+            return TestUrlMatch(gsUrl, gsHost, gsHeadersRaw);
         }
 
         [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl, EntryPoint = "AdBlockMatcherAreListsLoaded")]

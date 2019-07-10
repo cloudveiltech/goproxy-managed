@@ -8,7 +8,7 @@ import (
 	//"strings"
 	"os"
 
-	"github.com/pmezard/adblock/adblock"
+	"github.com/kfreezen/adblock/adblock"
 )
 
 const (
@@ -16,18 +16,6 @@ const (
 	Whitelist = 2
 	BypassList = 3
 )
-
-/*func (am *AdBlockMatcher) ParseRulesZipArchive(filePath string) {
-	zipFile, e := zip.OpenReader(filePath)
-	if e != nil {
-		log.Printf("Error parsing zipfile %s", e)
-		return
-	}
-	defer zipFile.Close()
-	for _, file := range zipFile.File {
-		am.ParseZipRulesFile(file)
-	}
-}*/
 
 func (am *AdBlockMatcher) AddRule(rule string, categoryId int32, listType int32) {
 	bypass := listType == BypassList

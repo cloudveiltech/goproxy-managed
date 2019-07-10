@@ -260,20 +260,24 @@ func Start() {
 				host := request.URL.Hostname()
 
 				// adBlockMatcher is in adblock_interop.go
-				categories := adBlockMatcher.TestUrlBlockedWithMatcherCategories(url, host)
+				categories := adBlockMatcher.TestUrlBlockedWithMatcherCategories(url, host, request.Header)
 				if len(categories) > 0 {
-					if categories[0].ListType == Whitelist {
-						userData[proxyNextActionKey] = ProxyNextActionAllowAndIgnoreContentAndResponse
+					for _, category := range categories {
+						if category.ListType == Whitelist {
+							userData[proxyNextActionKey] = ProxyNextActionAllowAndIgnoreContentAndResponse
 
-						if onWhitelistCallback != nil {
-							categoryInts := TransformMatcherCategoryArrayToIntArray(categories)
-							C.FireAdblockCallback(onWhitelistCallback, C.longlong(id), url, (*C.int)(&categoryInts[0]), C.int(len(categoryInts)))
+							if onWhitelistCallback != nil {
+								categoryInts := TransformMatcherCategoryArrayToIntArray(categories)
+								C.FireAdblockCallback(onWhitelistCallback, C.longlong(id), url, (*C.int)(&categoryInts[0]), C.int(len(categoryInts)))
 
-							request = session.request
+								request = session.request
+							}
+
+							return request, nil
 						}
-
-						return request, nil
-					} else if categories[0].ListType == Blacklist || categories[0].ListType == BypassList {
+					}
+					
+					if categories[0].ListType == Blacklist || categories[0].ListType == BypassList {
 						userData[proxyNextActionKey] = ProxyNextActionDropConnection
 
 						if onBlacklistCallback != nil {

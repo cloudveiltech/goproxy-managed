@@ -5,6 +5,10 @@ import "C"
 import (
 	"log"
 	"unsafe"
+	"net/http"
+	"net/textproto"
+	"bufio"
+	"strings"
 )
 
 var adBlockMatcher *AdBlockMatcher
@@ -36,8 +40,22 @@ func AdBlockMatcherLoad(fileName string) {
 }
 
 //export AdBlockMatcherTestUrlMatch
-func AdBlockMatcherTestUrlMatch(url string, host string) []int32 {
-	return adBlockMatcher.TestUrlBlocked(url, host)
+func AdBlockMatcherTestUrlMatch(url string, host string, headersRaw string) []int32 {
+	var headers http.Header = nil
+
+	if len(headersRaw) > 0 {
+		reader := bufio.NewReader(strings.NewReader(headersRaw + "\r\n"))
+		tp := textproto.NewReader(reader)
+
+		mimeHeader, err := tp.ReadMIMEHeader()
+		if err != nil {
+			log.Printf("MIME Header parse error: %s", err)
+		}
+
+		headers = http.Header(mimeHeader)
+	}
+
+	return adBlockMatcher.TestUrlBlocked(url, host, headers)
 }
 
 //export AdBlockMatcherAreListsLoaded

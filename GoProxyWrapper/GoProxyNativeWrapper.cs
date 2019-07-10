@@ -20,7 +20,12 @@ namespace GoproxyWrapper
         public static GoString FromString(string value)
         {
             GoString s = new GoString();
-            s.AsString = value;
+
+            if(value == null) {
+                s.AsString = "";
+            } else {
+                s.AsString = value;
+            }
             return s;
         }
 
@@ -40,10 +45,6 @@ namespace GoproxyWrapper
             }
             set
             {
-                if(IntPtr.Size == 8)
-                {
-
-                }
                 data = Marshal.StringToHGlobalAnsi(value);
                 lengthAsInt = value.Length;
             }
