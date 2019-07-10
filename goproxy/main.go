@@ -33,6 +33,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"strconv"
 	"unsafe"
 
 	"github.com/cloudveiltech/goproxy"
@@ -268,6 +269,14 @@ func Start() {
 
 							if onWhitelistCallback != nil {
 								categoryInts := TransformMatcherCategoryArrayToIntArray(categories)
+								s := "("
+								for _, i := range categories {
+									s += strconv.Itoa(int(i.CategoryId)) + ","
+								}
+
+								s += ")"
+								log.Printf("%s", s)
+
 								C.FireAdblockCallback(onWhitelistCallback, C.longlong(id), url, (*C.int)(&categoryInts[0]), C.int(len(categoryInts)))
 
 								request = session.request
@@ -282,6 +291,14 @@ func Start() {
 
 						if onBlacklistCallback != nil {
 							categoryInts := TransformMatcherCategoryArrayToIntArray(categories)
+							s := "("
+							for _, i := range categories {
+								s += strconv.Itoa(int(i.CategoryId)) + ","
+							}
+
+							s += ")"
+							log.Printf("%s", s)
+
 							C.FireAdblockCallback(onBlacklistCallback, C.longlong(id), url, (*C.int)(&categoryInts[0]), C.int(len(categoryInts)))
 
 							request = session.request
