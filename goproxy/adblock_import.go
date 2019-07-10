@@ -1,11 +1,8 @@
 package main
 
 import (
-	//"archive/zip"
 	"bufio"
-	//"io/ioutil"
 	"log"
-	//"strings"
 	"os"
 
 	"github.com/kfreezen/adblock/adblock"
@@ -36,7 +33,6 @@ func (am *AdBlockMatcher) AddRule(rule string, categoryId int32, listType int32)
 	}
 
 	am.lastMatcher.AddRule(r, am.RulesCnt)
-
 	am.RulesCnt = am.RulesCnt + 1
 }
 
