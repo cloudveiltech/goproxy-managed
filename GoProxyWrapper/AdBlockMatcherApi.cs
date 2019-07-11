@@ -63,5 +63,11 @@ namespace GoProxyWrapper
 
         [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl, EntryPoint = "AdBlockMatcherSetBlacklistCallback")]
         internal static extern void SetBlacklistCallback(InternalAdBlockCallbackDelegate callback);
+
+        [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl, EntryPoint = "AdBlockMatcherEnableBypass")]
+        public static extern void EnableBypass();
+
+        [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl, EntryPoint = "AdBlockMatcherDisableBypass")]
+        public static extern void DisableBypass();
     }
 }

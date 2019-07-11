@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-var adBlockMatcher *AdBlockMatcher
+var adBlockMatcher *AdBlockMatcher = nil
 
 var onWhitelistCallback unsafe.Pointer
 var onBlacklistCallback unsafe.Pointer
@@ -20,7 +20,17 @@ var adBlockMatchers map[int32]*AdBlockMatcher
 
 //export AdBlockMatcherInitialize
 func AdBlockMatcherInitialize() {
+	var oldMatcher *AdBlockMatcher = nil
+
+	if adBlockMatcher != nil {
+		oldMatcher = adBlockMatcher
+	}
+
 	adBlockMatcher = CreateMatcher()
+
+	if oldMatcher != nil {
+		adBlockMatcher.bypassEnabled = oldMatcher.bypassEnabled
+	}
 }
 
 //export AdBlockMatcherParseRuleFile
@@ -77,4 +87,14 @@ func AdBlockMatcherSetWhitelistCallback(callback unsafe.Pointer) {
 //export AdBlockMatcherSetBlacklistCallback
 func AdBlockMatcherSetBlacklistCallback(callback unsafe.Pointer) {
 	onBlacklistCallback = callback
+}
+
+//export AdBlockMatcherEnableBypass
+func AdBlockMatcherEnableBypass() {
+	adBlockMatcher.bypassEnabled = true
+}
+
+//export AdBlockMatcherDisableBypass
+func AdBlockMatcherDisableBypass() {
+	adBlockMatcher.bypassEnabled = false
 }
