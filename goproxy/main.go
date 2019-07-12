@@ -228,6 +228,8 @@ func Start() {
 
 	proxy.OnRequest().DoFunc(
 		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+			var proxyNextAction int32
+
 			userData := make(map[string]interface{})
 			ctx.UserData = userData
 
@@ -241,7 +243,7 @@ func Start() {
 			defer removeSessionFromInteropMap(id)
 
 			if beforeRequestCallback != nil {
-				proxyNextAction := int32(C.FireCallback(beforeRequestCallback, C.longlong(id)))
+				proxyNextAction = int32(C.FireCallback(beforeRequestCallback, C.longlong(id)))
 				userData[proxyNextActionKey] = proxyNextAction
 
 				request = session.request
