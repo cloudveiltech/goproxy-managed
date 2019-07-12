@@ -33,7 +33,6 @@ import (
 	"os"
 	"strings"
 	"time"
-	"strconv"
 	"unsafe"
 
 	"github.com/cloudveiltech/goproxy"
@@ -88,7 +87,7 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 	goproxy.SetDefaultTlsConfig(defaultTLSConfig)
 	loadAndSetCa(certFile, keyFile)
 	proxy = goproxy.NewProxyHttpServer()
-	proxy.Verbose = true
+	proxy.Verbose = false
 
 	if proxy.Verbose {
 		log.Printf("certFilePath %s", certFile)
@@ -232,6 +231,8 @@ func Start() {
 			userData := make(map[string]interface{})
 			ctx.UserData = userData
 
+			userData[proxyNextActionKey] = int32(ProxyNextActionAllowButRequestContentInspection)
+
 			request := r
 			var response *http.Response = nil
 
@@ -251,11 +252,8 @@ func Start() {
 				return request, response
 			}
 
-			userData[proxyNextActionKey] = ProxyNextActionAllowButRequestContentInspection
-
 			// Now run our matching engine.
 			if AdBlockMatcherAreListsLoaded() {
-				// TODO: Adblock matching for headers?
 
 				url := request.URL.String()
 				host := request.URL.Hostname()
@@ -265,17 +263,10 @@ func Start() {
 				if len(categories) > 0 {
 					for _, category := range categories {
 						if category.ListType == Whitelist {
-							userData[proxyNextActionKey] = ProxyNextActionAllowAndIgnoreContentAndResponse
+							userData[proxyNextActionKey] = int32(ProxyNextActionAllowAndIgnoreContentAndResponse)
 
 							if onWhitelistCallback != nil {
 								categoryInts := TransformMatcherCategoryArrayToIntArray(categories)
-								s := "("
-								for _, i := range categories {
-									s += strconv.Itoa(int(i.CategoryId)) + ","
-								}
-
-								s += ")"
-								log.Printf("%s", s)
 
 								C.FireAdblockCallback(onWhitelistCallback, C.longlong(id), url, (*C.int)(&categoryInts[0]), C.int(len(categoryInts)))
 
@@ -287,17 +278,10 @@ func Start() {
 					}
 					
 					if categories[0].ListType == Blacklist || categories[0].ListType == BypassList {
-						userData[proxyNextActionKey] = ProxyNextActionDropConnection
+						userData[proxyNextActionKey] = int32(ProxyNextActionDropConnection)
 
 						if onBlacklistCallback != nil {
 							categoryInts := TransformMatcherCategoryArrayToIntArray(categories)
-							s := "("
-							for _, i := range categories {
-								s += strconv.Itoa(int(i.CategoryId)) + ","
-							}
-
-							s += ")"
-							log.Printf("%s", s)
 
 							C.FireAdblockCallback(onBlacklistCallback, C.longlong(id), url, (*C.int)(&categoryInts[0]), C.int(len(categoryInts)))
 
@@ -335,6 +319,7 @@ func Start() {
 					proxyNextAction, valueOk := userData[proxyNextActionKey].(int32)
 
 					if valueOk {
+
 						if proxyNextAction == ProxyNextActionAllowAndIgnoreContentAndResponse {
 							return response
 						}
