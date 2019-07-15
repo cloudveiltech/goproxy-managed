@@ -69,5 +69,9 @@ namespace GoProxyWrapper
 
         [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl, EntryPoint = "AdBlockMatcherDisableBypass")]
         public static extern void DisableBypass();
+
+        [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl, EntryPoint = "AdBlockMatcherGetBypassEnabled")]
+        public static extern bool GetBypassEnabled();
+        
     }
 }

@@ -98,3 +98,12 @@ func AdBlockMatcherEnableBypass() {
 func AdBlockMatcherDisableBypass() {
 	adBlockMatcher.bypassEnabled = false
 }
+
+//export AdBlockMatcherGetBypassEnabled
+func AdBlockMatcherGetBypassEnabled() bool {
+	if adBlockMatcher != nil {
+		return adBlockMatcher.bypassEnabled
+	} else {
+		return false
+	}
+}
