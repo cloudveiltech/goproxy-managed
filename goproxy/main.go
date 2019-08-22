@@ -2,11 +2,18 @@ package main
 
 /*
 typedef int (*callback)(long long id);
+typedef int (*adBlockCallback)(long long id, _GoString_ url, int* categories, int categoryLen);
 
 static inline int FireCallback(void *ptr, long long id)
 {
 	callback p = (callback)ptr;
 	return p(id);
+}
+
+static inline int FireAdblockCallback(void* ptr, long long id, _GoString_ url, int* categories, int categoryLen)
+{
+	adBlockCallback p = (adBlockCallback)ptr;
+	return p(id, url, categories, categoryLen);
 }
 
 */
@@ -47,10 +54,10 @@ var (
 )
 
 const (
-	ProxyNextActionAllowAndIgnoreContent            = 0
+	ProxyNextActionAllowAndIgnoreContent = 0
 	ProxyNextActionAllowButRequestContentInspection = 1
 	ProxyNextActionAllowAndIgnoreContentAndResponse = 2
-	ProxyNextActionDropConnection                   = 3
+	ProxyNextActionDropConnection = 3
 )
 
 const proxyNextActionKey string = "__proxyNextAction__"
@@ -67,7 +74,7 @@ func SetOnBeforeResponseCallback(callback unsafe.Pointer) {
 
 //export SetProxyLogFile
 func SetProxyLogFile(logFile string) {
-	file, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	file, err := os.OpenFile(logFile, os.O_APPEND | os.O_CREATE | os.O_WRONLY, 0666)
 	if err != nil {
 		return
 	}
@@ -80,15 +87,6 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 	goproxy.SetDefaultTlsConfig(defaultTLSConfig)
 	loadAndSetCa(certFile, keyFile)
 	proxy = goproxy.NewProxyHttpServer()
-
-	proxy.Tr.Dial = func(network, addr string) (c net.Conn, err error) {
-		c, err = net.Dial(network, addr)
-		if c, ok := c.(*net.TCPConn); err == nil && ok {
-			c.SetKeepAlive(true)
-		}
-		return
-	}
-
 	proxy.Verbose = false
 
 	if proxy.Verbose {
@@ -160,7 +158,7 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 		}
 	})
 
-//	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
+	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
 	config.portHttp = portHttp
 	config.portHttps = portHttps
 
@@ -171,7 +169,7 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 
 func dialRemote(req *http.Request) net.Conn {
 	port := ""
-	if !strings.Contains(req.Host, ":") {
+	if !strings.Contains(req.Host, ":") {		
 		if req.URL.Scheme == "https" {
 			port = ":443"
 		} else {
@@ -183,14 +181,14 @@ func dialRemote(req *http.Request) net.Conn {
 		conf := tls.Config{
 			InsecureSkipVerify: true,
 		}
-		remote, err := tls.Dial("tcp", req.Host+port, &conf)
+		remote, err := tls.Dial("tcp", req.Host + port, &conf)
 		if err != nil {
 			log.Printf("Websocket error connect %s", err)
 			return nil
 		}
 		return remote
 	} else {
-		remote, err := net.Dial("tcp", req.Host+port)
+		remote, err := net.Dial("tcp", req.Host + port)
 		if err != nil {
 			log.Printf("Websocket error connect %s", err)
 			return nil
@@ -227,80 +225,126 @@ func Start() {
 	}
 
 	server = startHttpServer()
-	
+
 	proxy.OnRequest().DoFunc(
 		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+			var proxyNextAction int32
+
 			userData := make(map[string]interface{})
 			ctx.UserData = userData
 
+			userData[proxyNextActionKey] = int32(ProxyNextActionAllowButRequestContentInspection)
+
 			request := r
-				var response *http.Response = nil
-				if beforeRequestCallback != nil {
-					session := session{r, nil, false}
-					id := saveSessionToInteropMap(ctx.Session, &session)
+			var response *http.Response = nil
 
-					proxyNextAction := int32(C.FireCallback(beforeRequestCallback, C.longlong(id)))
-					userData[proxyNextActionKey] = proxyNextAction
+			session := session{r, nil, false}
+			id := saveSessionToInteropMap(ctx.Session, &session)
+			defer removeSessionFromInteropMap(id)
 
-					removeSessionFromInteropMap(id)
+			if beforeRequestCallback != nil {
+				proxyNextAction = int32(C.FireCallback(beforeRequestCallback, C.longlong(id)))
+				userData[proxyNextActionKey] = proxyNextAction
 
-					request = session.request
-					response = session.response
+				request = session.request
+				response = session.response
+			}
 
-				//log.Printf("OnBeforeRequest overhead time: %v, %v", time.Since(startTime), id)
+			if response != nil {
+				return request, response
+			}
+
+			// Now run our matching engine.
+			if AdBlockMatcherAreListsLoaded() {
+
+				url := request.URL.String()
+				host := request.URL.Hostname()
+
+				// adBlockMatcher is in adblock_interop.go
+				categories := adBlockMatcher.TestUrlBlockedWithMatcherCategories(url, host, request.Header)
+				if len(categories) > 0 {
+					for _, category := range categories {
+						if category.ListType == Whitelist {
+							userData[proxyNextActionKey] = int32(ProxyNextActionAllowAndIgnoreContentAndResponse)
+
+							if onWhitelistCallback != nil {
+								categoryInts := TransformMatcherCategoryArrayToIntArray(categories)
+
+								C.FireAdblockCallback(onWhitelistCallback, C.longlong(id), url, (*C.int)(&categoryInts[0]), C.int(len(categoryInts)))
+
+								request = session.request
+							}
+
+							return request, nil
+						}
+					}
+					
+					if categories[0].ListType == Blacklist || categories[0].ListType == BypassList {
+						userData[proxyNextActionKey] = int32(ProxyNextActionDropConnection)
+
+						if onBlacklistCallback != nil {
+							categoryInts := TransformMatcherCategoryArrayToIntArray(categories)
+
+							C.FireAdblockCallback(onBlacklistCallback, C.longlong(id), url, (*C.int)(&categoryInts[0]), C.int(len(categoryInts)))
+
+							request = session.request
+							response = session.response
+						}
+
+						return request, response
+					}
 				}
+			}
+
 			return request, response
 		})
 
 	proxy.OnResponse().DoFunc(
 		func(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
-				response := resp
-				if !strings.Contains(resp.Header.Get("Content-Type"), "text") && !strings.Contains(resp.Header.Get("Content-Type"), "json") {
-					return resp
-				}
+			response := resp
+			var isVerified bool = true
 
-				var isVerified bool = true
-
-				if response != nil && response.TLS != nil {
-					var err error
-					isVerified, err = verifyCerts(ctx.Req.URL.Host, response.TLS.PeerCertificates)
-					if err != nil {
-						isVerified = false
-					}
-				} else {
+			if response != nil && response.TLS != nil {
+				var err error
+				isVerified, err = verifyCerts(ctx.Req.URL.Host, response.TLS.PeerCertificates)
+				if err != nil {
 					isVerified = false
 				}
+			} else {
+				isVerified = false
+			}
 
-				if ctx.UserData != nil {
-					userData, ok := ctx.UserData.(map[string]interface{})
+			if ctx.UserData != nil {
+				userData, ok := ctx.UserData.(map[string]interface{})
 
-					if ok {
-						proxyNextAction, valueOk := userData[proxyNextActionKey].(int32)
+				if ok {
+					proxyNextAction, valueOk := userData[proxyNextActionKey].(int32)
 
-						if valueOk {
-							if proxyNextAction == ProxyNextActionAllowAndIgnoreContentAndResponse {
-								return response
-							}
+					if valueOk {
+
+						if proxyNextAction == ProxyNextActionAllowAndIgnoreContentAndResponse {
+							return response
 						}
 					}
 				}
+			}
 
-				// TODO: Call x509.Certificate.Verify
-				// We should be able to glean from that whether or not we do bad SSL page.
-				// A couple of things here:
-				// 1. Need a boolean that says IsVerified for Response
-				// 2. Need a block page that allows us to bypass it directly from the block page.
-				if beforeResponseCallback != nil {
-					session := session{ctx.Req, resp, isVerified}
-					session.isCertVerified = isVerified
-					id := saveSessionToInteropMap(ctx.Session, &session)
-					C.FireCallback(beforeResponseCallback, C.longlong(id))
-					removeSessionFromInteropMap(id)
+			// TODO: Call x509.Certificate.Verify
+			// We should be able to glean from that whether or not we do bad SSL page.
+			// A couple of things here:
+			// 1. Need a boolean that says IsVerified for Response
+			// 2. Need a block page that allows us to bypass it directly from the block page.
+			if beforeResponseCallback != nil {
+				session := session{ctx.Req, resp, isVerified}
+				session.isCertVerified = isVerified
+				id := saveSessionToInteropMap(ctx.Session, &session)
+				C.FireCallback(beforeResponseCallback, C.longlong(id))
+				removeSessionFromInteropMap(id)
 
-					response = session.response
+				response = session.response
 
 				//log.Printf("OnBeforeResponse overhead time: %v, %v", time.Since(startTime), id)
-				}
+			}
 
 			return response
 		})
@@ -413,14 +457,6 @@ func test() {
 
 	reader := bufio.NewReader(os.Stdin)
 
-	
-	// f, err := os.Create("trace.out")
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// defer f.Close()
-	// trace.Start(f)
-	// defer trace.Stop()
 	for !quit {
 		line, _ = reader.ReadString('\n')
 		if strings.TrimSpace(line) == "quit" {

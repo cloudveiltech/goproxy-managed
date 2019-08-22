@@ -8,6 +8,11 @@ namespace GoProxyWrapper
 {
     public static class AdBlockMatcherApi
     {
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        internal delegate int InternalAdBlockCallbackDelegate(long handle, GoString url, IntPtr categories, int categoryLen);
+
+        public delegate int AdBlockCallbackDelegate(Session session, string url, int[] categories);
+
         [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl, EntryPoint = "AdBlockMatcherInitialize")]
         public static extern void Initialize();
 
@@ -39,17 +44,34 @@ namespace GoProxyWrapper
         }
 
         [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl, EntryPoint = "AdBlockMatcherTestUrlMatch")]
-        internal static extern int TestUrlMatch(GoString url, GoString host);
+        internal static extern int TestUrlMatch(GoString url, GoString host, GoString headersRaw);
 
-        public static int TestUrlMatch(string url, string host)
+        public static int TestUrlMatch(string url, string host, string headersRaw)
         {
             GoString gsUrl = GoString.FromString(url);
             GoString gsHost = GoString.FromString(host);
+            GoString gsHeadersRaw = GoString.FromString(headersRaw);
 
-            return TestUrlMatch(gsUrl, gsHost);
+            return TestUrlMatch(gsUrl, gsHost, gsHeadersRaw);
         }
 
         [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl, EntryPoint = "AdBlockMatcherAreListsLoaded")]
         public static extern bool AreListsLoaded();
+
+        [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl, EntryPoint = "AdBlockMatcherSetWhitelistCallback")]
+        internal static extern void SetWhitelistCallback(InternalAdBlockCallbackDelegate callback);
+
+        [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl, EntryPoint = "AdBlockMatcherSetBlacklistCallback")]
+        internal static extern void SetBlacklistCallback(InternalAdBlockCallbackDelegate callback);
+
+        [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl, EntryPoint = "AdBlockMatcherEnableBypass")]
+        public static extern void EnableBypass();
+
+        [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl, EntryPoint = "AdBlockMatcherDisableBypass")]
+        public static extern void DisableBypass();
+
+        [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl, EntryPoint = "AdBlockMatcherGetBypassEnabled")]
+        public static extern bool GetBypassEnabled();
+        
     }
 }

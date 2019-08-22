@@ -1,3 +1,15 @@
+Function FirstObject($Array) {
+    if($Array -is [array] -or $Array.GetType().IsArray) {
+        if($Array.Count -gt 0) {
+            return $Array[0]
+        } else {
+            return $null
+        }
+    } else {
+        return $Array
+    }
+}
+
 Function Find-MsBuild([int] $MaxVersion = 2017)
 {
     $agentPath = "$Env:programfiles (x86)\Microsoft Visual Studio\2017\BuildTools\MSBuild\15.0\Bin\msbuild.exe"
@@ -72,10 +84,10 @@ $packageIdNode = Get-XmlNode -XmlDocument $proj -NodePath "Project.PropertyGroup
 if($packageIdNode -eq $null) {
     $packageId = $proj.Project.PropertyGroup.Title
 } else {
-    $packageId = $proj.Project.PropertyGroup.PackageId
+    $packageId = $packageIdNode.InnerText.Trim()
 }
 
-$version = $proj.Project.PropertyGroup.Version
+$version = FirstObject -Array $proj.Project.PropertyGroup.Version
 
 cd goproxy
 if($IsMacOS) {
