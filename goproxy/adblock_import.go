@@ -5,12 +5,12 @@ import (
 	"log"
 	"os"
 
-	"github.com/kfreezen/adblock/adblock"
+	"github.com/patriciy/adblock/adblock"
 )
 
 const (
-	Blacklist = 1
-	Whitelist = 2
+	Blacklist  = 1
+	Whitelist  = 2
 	BypassList = 3
 )
 
@@ -28,11 +28,22 @@ func (am *AdBlockMatcher) AddRule(rule string, categoryId int32, listType int32)
 		return
 	}
 
-	if am.RulesCnt%MAX_RULES_PER_MATCHER == 0 {
+	if am.RulesCnt > 0 && am.RulesCnt%MAX_RULES_PER_MATCHER == 0 {
 		am.addMatcher(categoryId, listType, bypass)
 	}
 
+	//Check if it's just a domain rule
+	if len(r.Parts) == 2 {
+		if r.Parts[0].Type == adblock.DomainAnchor {
+			if r.Parts[1].Type == adblock.Exact {
+				am.lastCategory.BlockedDomains[string(r.Parts[1].Value)] = true
+				am.RulesCnt = am.RulesCnt + 1
+				return
+			}
+		}
+	}
 	am.lastMatcher.AddRule(r, am.RulesCnt)
+	r = nil
 	am.RulesCnt = am.RulesCnt + 1
 }
 
@@ -60,6 +71,8 @@ func (am *AdBlockMatcher) addRulesFromScanner(scanner *bufio.Scanner, categoryId
 
 		am.AddRule(line, categoryId, listType)
 	}
+
+	adblock.ClearCaches()
 }
 
 /*func (am *AdBlockMatcher) addPhrasesFromScanner(scanner *bufio.Scanner, categoryId int32) {

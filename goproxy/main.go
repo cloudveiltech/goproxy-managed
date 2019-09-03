@@ -54,10 +54,10 @@ var (
 )
 
 const (
-	ProxyNextActionAllowAndIgnoreContent = 0
+	ProxyNextActionAllowAndIgnoreContent            = 0
 	ProxyNextActionAllowButRequestContentInspection = 1
 	ProxyNextActionAllowAndIgnoreContentAndResponse = 2
-	ProxyNextActionDropConnection = 3
+	ProxyNextActionDropConnection                   = 3
 )
 
 const proxyNextActionKey string = "__proxyNextAction__"
@@ -74,7 +74,7 @@ func SetOnBeforeResponseCallback(callback unsafe.Pointer) {
 
 //export SetProxyLogFile
 func SetProxyLogFile(logFile string) {
-	file, err := os.OpenFile(logFile, os.O_APPEND | os.O_CREATE | os.O_WRONLY, 0666)
+	file, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
 		return
 	}
@@ -168,8 +168,9 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 }
 
 func dialRemote(req *http.Request) net.Conn {
+
 	port := ""
-	if !strings.Contains(req.Host, ":") {		
+	if !strings.Contains(req.Host, ":") {
 		if req.URL.Scheme == "https" {
 			port = ":443"
 		} else {
@@ -177,18 +178,20 @@ func dialRemote(req *http.Request) net.Conn {
 		}
 	}
 
+	log.Printf("Custom dialer %s", req.Host+port)
+
 	if req.URL.Scheme == "https" {
 		conf := tls.Config{
 			InsecureSkipVerify: true,
 		}
-		remote, err := tls.Dial("tcp", req.Host + port, &conf)
+		remote, err := tls.Dial("tcp", req.Host+port, &conf)
 		if err != nil {
 			log.Printf("Websocket error connect %s", err)
 			return nil
 		}
 		return remote
 	} else {
-		remote, err := net.Dial("tcp", req.Host + port)
+		remote, err := net.Dial("tcp", req.Host+port)
 		if err != nil {
 			log.Printf("Websocket error connect %s", err)
 			return nil
@@ -261,10 +264,10 @@ func Start() {
 				host := request.URL.Hostname()
 
 				// adBlockMatcher is in adblock_interop.go
-				categories := adBlockMatcher.TestUrlBlockedWithMatcherCategories(url, host, request.Header)
+				categories, matchTypes := adBlockMatcher.TestUrlBlockedWithMatcherCategories(url, host, request.Referer())
 				if len(categories) > 0 {
-					for _, category := range categories {
-						if category.ListType == Whitelist {
+					for index, category := range categories {
+						if category.ListType == Whitelist || matchTypes[index] == Excluded {
 							userData[proxyNextActionKey] = int32(ProxyNextActionAllowAndIgnoreContentAndResponse)
 
 							if onWhitelistCallback != nil {
@@ -278,7 +281,7 @@ func Start() {
 							return request, nil
 						}
 					}
-					
+
 					if categories[0].ListType == Blacklist || categories[0].ListType == BypassList {
 						userData[proxyNextActionKey] = int32(ProxyNextActionDropConnection)
 
@@ -291,7 +294,7 @@ func Start() {
 							response = session.response
 						}
 
-						return request, response
+						return request, response //goproxy.NewResponse(request, "text/plain", 401, "Blocked by rules")
 					}
 				}
 			}
@@ -354,6 +357,8 @@ func Start() {
 	if proxy.Verbose {
 		log.Printf("Server started %d, %d", config.portHttp, config.portHttps)
 	}
+
+	monitorMemoryUsage()
 }
 
 func runHttpsListener() {
@@ -383,6 +388,11 @@ func runHttpsListener() {
 				log.Printf("Cannot support non-SNI enabled clients")
 				return
 			}
+
+			if proxy.Verbose {
+				log.Printf("Https handler called for %s", tlsConn.Host())
+			}
+
 			connectReq := &http.Request{
 				Method: "CONNECT",
 				URL: &url.URL{
@@ -447,6 +457,21 @@ func main() {
 func test() {
 	log.Printf("main: starting HTTP server")
 
+	AdBlockMatcherInitialize()
+	adBlockMatcher.ParseRuleFile("c:/Users/dgora/Downloads/.default.adult_gay_lesbian_bisexual.rules.txt", 0, Blacklist)
+	categories, matchTypes := adBlockMatcher.TestUrlBlockedWithMatcherCategories("https://www.pornhub.com/", "www.pornhub.com", "https://google.com")
+	if len(categories) > 0 {
+		for index := range categories {
+			if matchTypes[index] == Excluded {
+				log.Print("Matched Excluded")
+			} else {
+				log.Print("Matched Included")
+			}
+		}
+
+	} else {
+		log.Print("not matched")
+	}
 	Init(14300, 14301, "rootCertificate.pem", "rootPrivateKey.pem")
 	Start()
 

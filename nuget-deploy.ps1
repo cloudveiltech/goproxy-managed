@@ -106,7 +106,7 @@ if (-not (Test-Path nuget-packages)) {
     mkdir nuget-packages
 }
 
-& nuget pack goproxy-native-windows/CloudVeil.proxy-native-windows.nuspec -OutputDirectory nuget-packages
+& .\nuget pack goproxy-native-windows/CloudVeil.proxy-native-windows.nuspec -OutputDirectory nuget-packages
 
 if($IsMacOS) {
     & nuget pack goproxy-native-macos/CloudVeil.proxy-native-macos.nuspec -OutputDirectory nuget-packages

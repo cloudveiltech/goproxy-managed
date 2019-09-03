@@ -26,11 +26,12 @@ func setStdHandle(stdhandle int32, handle syscall.Handle) error {
 
 // redirectStderr to the file passed in
 func redirectStderr(f *os.File) {
-	err := setStdHandle(syscall.STD_ERROR_HANDLE, syscall.Handle(f.Fd()))
+	err := setStdHandle(syscall.STD_OUTPUT_HANDLE, syscall.Handle(f.Fd()))
 	if err != nil {
 		log.Fatalf("Failed to redirect stderr to file: %v", err)
 	}
 	// SetStdHandle does not affect prior references to stderr
 	os.Stderr = f
+
 	log.SetOutput(f)
 }

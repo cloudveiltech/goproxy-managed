@@ -3,12 +3,12 @@ package main
 import "C"
 
 import (
+	"bufio"
 	"log"
-	"unsafe"
 	"net/http"
 	"net/textproto"
-	"bufio"
 	"strings"
+	"unsafe"
 )
 
 var adBlockMatcher *AdBlockMatcher = nil
@@ -35,7 +35,7 @@ func AdBlockMatcherInitialize() {
 
 //export AdBlockMatcherParseRuleFile
 func AdBlockMatcherParseRuleFile(fileName string, categoryId int32, listType int32) {
-	log.Printf("AdBlockMatcherParseRuleFile(%s, %d, %d)", fileName, categoryId, listType)
+	log.Printf("AdBlockMatcherParseRuleFile11(%s, %d, %d)", fileName, categoryId, listType)
 	adBlockMatcher.ParseRuleFile(fileName, categoryId, listType)
 }
 
@@ -65,7 +65,7 @@ func AdBlockMatcherTestUrlMatch(url string, host string, headersRaw string) []in
 		headers = http.Header(mimeHeader)
 	}
 
-	return adBlockMatcher.TestUrlBlocked(url, host, headers)
+	return adBlockMatcher.TestUrlBlocked(url, host, headers.Get("referer"))
 }
 
 //export AdBlockMatcherAreListsLoaded
