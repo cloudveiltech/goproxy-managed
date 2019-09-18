@@ -2,7 +2,7 @@
 <package>
   <metadata>
     <id>CloudVeil.proxy-native-windows</id>
-    <version>0.4.25</version>
+    <version>0.4.27</version>
     <title>CloudVeil Native Proxy (goproxy)</title>
     <authors>Elazar Leibovich, Dmitriy Goraschenko</authors>
     <license type="expression">BSD-3-Clause</license>

@@ -87,7 +87,7 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 	goproxy.SetDefaultTlsConfig(defaultTLSConfig)
 	loadAndSetCa(certFile, keyFile)
 	proxy = goproxy.NewProxyHttpServer()
-	proxy.Verbose = false
+	proxy.Verbose = true
 
 	if proxy.Verbose {
 		log.Printf("certFilePath %s", certFile)
@@ -238,6 +238,7 @@ func Start() {
 
 			userData[proxyNextActionKey] = int32(ProxyNextActionAllowButRequestContentInspection)
 
+			//dumpRequest(r)
 			request := r
 			var response *http.Response = nil
 
@@ -455,11 +456,30 @@ func main() {
 }
 
 func test() {
+	client := &http.Client{}
+	req, _ := http.NewRequest("GET", "https://www.findagrave.com/", nil)
+	req.Header.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36 Edge/18.18362")
+	req.Header.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Add("Accept-Language", "ru,en-US;q=0.7,en;q=0.3")
+	req.Header.Add("Cache-Control", "max-age=0")
+	req.Header.Add("Dnt", "1")
+	req.Header.Add("Accept-Encoding", "gzip")
+	req.Header.Add("Host", "www.findagrave.com")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	fmt.Printf("Status code: %d", resp.StatusCode)
+
 	log.Printf("main: starting HTTP server")
 
 	AdBlockMatcherInitialize()
-	adBlockMatcher.ParseRuleFile("c:/Users/dgora/Downloads/.default.adult_gay_lesbian_bisexual.rules.txt", 0, Blacklist)
-	categories, matchTypes := adBlockMatcher.TestUrlBlockedWithMatcherCategories("https://www.pornhub.com/", "www.pornhub.com", "https://google.com")
+	adBlockMatcher.ParseRuleFile("c:/Users/dgora/Downloads/rules.txt", 0, Blacklist)
+	categories, matchTypes := adBlockMatcher.TestUrlBlockedWithMatcherCategories("https://www.pornhub.com/", "www.pornhub.com", "")	
+	categories, matchTypes = adBlockMatcher.TestUrlBlockedWithMatcherCategories("https://google.com/tbm=isch", "google.com", "")
 	if len(categories) > 0 {
 		for index := range categories {
 			if matchTypes[index] == Excluded {
