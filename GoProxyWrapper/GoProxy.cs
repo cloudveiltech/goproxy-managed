@@ -109,7 +109,7 @@ namespace GoproxyWrapper
             }
         }
 
-        public delegate ProxyNextAction OnBeforeRequest(Session session);
+        public delegate int OnBeforeRequest(Session session);
         public delegate void OnBeforeResponse(Session session);
 
         public event OnBeforeRequest BeforeRequest;

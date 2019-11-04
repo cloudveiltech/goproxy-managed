@@ -53,13 +53,6 @@ var (
 	beforeResponseCallback unsafe.Pointer
 )
 
-const (
-	ProxyNextActionAllowAndIgnoreContent            = 0
-	ProxyNextActionAllowButRequestContentInspection = 1
-	ProxyNextActionAllowAndIgnoreContentAndResponse = 2
-	ProxyNextActionDropConnection                   = 3
-)
-
 const proxyNextActionKey string = "__proxyNextAction__"
 
 //export SetOnBeforeRequestCallback
@@ -231,12 +224,9 @@ func Start() {
 
 	proxy.OnRequest().DoFunc(
 		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-			var proxyNextAction int32
-
 			userData := make(map[string]interface{})
 			ctx.UserData = userData
-
-			userData[proxyNextActionKey] = int32(ProxyNextActionAllowButRequestContentInspection)
+			userData["blocked"] = false
 
 			//dumpRequest(r)
 			request := r
@@ -247,8 +237,8 @@ func Start() {
 			defer removeSessionFromInteropMap(id)
 
 			if beforeRequestCallback != nil {
-				proxyNextAction = int32(C.FireCallback(beforeRequestCallback, C.longlong(id)))
-				userData[proxyNextActionKey] = proxyNextAction
+				blocked := int32(C.FireCallback(beforeRequestCallback, C.longlong(id))) == 1
+				userData["blocked"] = blocked
 
 				request = session.request
 				response = session.response
@@ -269,7 +259,7 @@ func Start() {
 				if len(categories) > 0 {
 					for index, category := range categories {
 						if category.ListType == Whitelist || matchTypes[index] == Excluded {
-							userData[proxyNextActionKey] = int32(ProxyNextActionAllowAndIgnoreContentAndResponse)
+							userData["blocked"] = false
 
 							if onWhitelistCallback != nil {
 								categoryInts := TransformMatcherCategoryArrayToIntArray(categories)
@@ -284,7 +274,7 @@ func Start() {
 					}
 
 					if categories[0].ListType == Blacklist || categories[0].ListType == BypassList {
-						userData[proxyNextActionKey] = int32(ProxyNextActionDropConnection)
+						userData["blocked"] = true
 
 						if onBlacklistCallback != nil {
 							categoryInts := TransformMatcherCategoryArrayToIntArray(categories)
@@ -322,11 +312,9 @@ func Start() {
 				userData, ok := ctx.UserData.(map[string]interface{})
 
 				if ok {
-					proxyNextAction, valueOk := userData[proxyNextActionKey].(int32)
-
+					blocked, valueOk := userData["blocked"].(bool)
 					if valueOk {
-
-						if proxyNextAction == ProxyNextActionAllowAndIgnoreContentAndResponse {
+						if !blocked {
 							return response
 						}
 					}
@@ -456,30 +444,11 @@ func main() {
 }
 
 func test() {
-	client := &http.Client{}
-	req, _ := http.NewRequest("GET", "https://www.findagrave.com/", nil)
-	req.Header.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36 Edge/18.18362")
-	req.Header.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-	req.Header.Add("Accept-Language", "ru,en-US;q=0.7,en;q=0.3")
-	req.Header.Add("Cache-Control", "max-age=0")
-	req.Header.Add("Dnt", "1")
-	req.Header.Add("Accept-Encoding", "gzip")
-	req.Header.Add("Host", "www.findagrave.com")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	fmt.Printf("Status code: %d", resp.StatusCode)
-
 	log.Printf("main: starting HTTP server")
 
 	AdBlockMatcherInitialize()
-	adBlockMatcher.ParseRuleFile("c:/Users/dgora/Downloads/rules.txt", 0, Blacklist)
-	categories, matchTypes := adBlockMatcher.TestUrlBlockedWithMatcherCategories("https://www.pornhub.com/", "www.pornhub.com", "")	
-	categories, matchTypes = adBlockMatcher.TestUrlBlockedWithMatcherCategories("https://google.com/tbm=isch", "google.com", "")
+	adBlockMatcher.ParseRuleFile("c:/Users/dgora/Downloads/class_33/whitelist.rules", 0, Blacklist)
+	categories, matchTypes := adBlockMatcher.TestUrlBlockedWithMatcherCategories("https://mapbox.com/", "mapbox.com", "")
 	if len(categories) > 0 {
 		for index := range categories {
 			if matchTypes[index] == Excluded {

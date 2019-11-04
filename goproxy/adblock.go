@@ -148,30 +148,37 @@ func (am *AdBlockMatcher) matchRulesCategories(matcherCategories []*MatcherCateg
 			}
 		}
 
-		if !categoryMatched && matchDomain(domainParts, matcherCategory) {
-			matchedCategories = append(matchedCategories, matcherCategory)
-			catergoriesMatchType = append(catergoriesMatchType, Included)
+		if !categoryMatched {
+			matched, matchType := matchDomain(domainParts, matcherCategory)
+			if matched {
+				matchedCategories = append(matchedCategories, matcherCategory)
+				catergoriesMatchType = append(catergoriesMatchType, matchType)
+			}
 		}
 	}
 
 	return matchedCategories, catergoriesMatchType
 }
 
-func matchDomain(domainParts []string, matcherCatergory *MatcherCategory) bool {
+func matchDomain(domainParts []string, matcherCatergory *MatcherCategory) (bool, int) {
 	partsLen := len(domainParts)
 	if partsLen < 2 {
 		log.Printf("Domain too short")
-		return false
+		return false, Included
 	}
 	domainName := domainParts[partsLen-1]
 	for i := len(domainParts) - 2; i >= 0; i-- {
 		domainName = domainParts[i] + "." + domainName
-		_, ok := matcherCatergory.BlockedDomains[domainName]
+		value, ok := matcherCatergory.BlockedDomains[domainName]
 		if ok {
-			return true
+			if value {
+				return true, Included
+			} else {
+				return true, Excluded
+			}
 		}
 	}
-	return false
+	return false, Included
 }
 
 func (am *AdBlockMatcher) TestContentTypeIsFiltrable(contentType string) bool {

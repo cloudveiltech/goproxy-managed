@@ -7,8 +7,8 @@ import (
 )
 
 type session struct {
-	request  *http.Request
-	response *http.Response
+	request        *http.Request
+	response       *http.Response
 	isCertVerified bool
 }
 
