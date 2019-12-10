@@ -56,7 +56,7 @@ $savePath = Join-Path $currentLocation $projectFilePath
 $projectFile.Save($savePath)
 
 $macosNativePath = Join-Path $currentLocation "goproxy-native-macos/CloudVeil.proxy-native-macos.nuspec"
-$windowsNativePath = Join-Path $currentLocation "goproxy-native-windows/CloudVeil.proxy-native-windows.nuspec"
+$windowsNativePath = Join-Path $currentLocation "goproxy-native-windows/CloudVeil.goproxy-native-windows.nuspec"
 
 Update-Nuspec-Version -nuspecPath $macosNativePath -version $newVersion
 Update-Nuspec-Version -nuspecPath $windowsNativePath -version $newVersion

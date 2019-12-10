@@ -12,7 +12,7 @@ Function FirstObject($Array) {
 
 Function Find-MsBuild([int] $MaxVersion = 2017)
 {
-    $agentPath = "$Env:programfiles (x86)\Microsoft Visual Studio\2017\BuildTools\MSBuild\15.0\Bin\msbuild.exe"
+    $agentPath = "$Env:programfiles (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\msbuild.exe"
     $devPath = "$Env:programfiles (x86)\Microsoft Visual Studio\2017\Enterprise\MSBuild\15.0\Bin\msbuild.exe"
     $proPath = "$Env:programfiles (x86)\Microsoft Visual Studio\2017\Professional\MSBuild\15.0\Bin\msbuild.exe"
     $communityPath = "$Env:programfiles (x86)\Microsoft Visual Studio\2017\Community\MSBuild\15.0\Bin\msbuild.exe"
@@ -106,7 +106,7 @@ if (-not (Test-Path nuget-packages)) {
     mkdir nuget-packages
 }
 
-& .\nuget pack goproxy-native-windows/CloudVeil.proxy-native-windows.nuspec -OutputDirectory nuget-packages
+& .\nuget pack goproxy-native-windows/CloudVeil.goproxy-native-windows.nuspec -OutputDirectory nuget-packages
 
 if($IsMacOS) {
     & nuget pack goproxy-native-macos/CloudVeil.proxy-native-macos.nuspec -OutputDirectory nuget-packages
@@ -121,7 +121,7 @@ if (-not $?) {
 }
 
 $nupkg = Join-Path (Split-Path -Path $projectFilePath) "bin/Release/$packageId.$version.nupkg"
-$windowsPackage = "nuget-packages/CloudVeil.proxy-native-windows.$version.nupkg"
+$windowsPackage = "nuget-packages/CloudVeil.goproxy-native-windows.$version.nupkg"
 
 if($IsMacOS) {
     $macosPackage = "nuget-packages/CloudVeil.proxy-native-macos.$version.nupkg"

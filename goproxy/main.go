@@ -151,7 +151,7 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 		}
 	})
 
-	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
+	//proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
 	config.portHttp = portHttp
 	config.portHttps = portHttps
 
@@ -176,6 +176,7 @@ func dialRemote(req *http.Request) net.Conn {
 	if req.URL.Scheme == "https" {
 		conf := tls.Config{
 			InsecureSkipVerify: true,
+			Renegotiation: tls.RenegotiateFreelyAsClient,
 		}
 		remote, err := tls.Dial("tcp", req.Host+port, &conf)
 		if err != nil {
@@ -445,7 +446,7 @@ func main() {
 
 func test() {
 	log.Printf("main: starting HTTP server")
-
+/*
 	AdBlockMatcherInitialize()
 	adBlockMatcher.ParseRuleFile("c:/Users/dgora/Downloads/class_33/whitelist.rules", 0, Blacklist)
 	categories, matchTypes := adBlockMatcher.TestUrlBlockedWithMatcherCategories("https://mapbox.com/", "mapbox.com", "")
@@ -460,8 +461,8 @@ func test() {
 
 	} else {
 		log.Print("not matched")
-	}
-	Init(14300, 14301, "rootCertificate.pem", "rootPrivateKey.pem")
+	}*/
+	Init(14500, 14501, "rootCertificate.pem", "rootPrivateKey.pem")
 	Start()
 
 	log.Printf("main: serving for 1000 seconds")

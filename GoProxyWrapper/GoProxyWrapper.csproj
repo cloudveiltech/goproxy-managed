@@ -3,16 +3,16 @@
     <TargetFramework>netstandard2.0</TargetFramework>
     <NuspecFile>$(MSBuildThisFileDirectory)$(MSBuildProjectName).nuspec</NuspecFile>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-    <Version>0.4.28</Version>
+    <Version>0.4.31</Version>
     <Authors>Dmitriy Goraschenko</Authors>
     <Company>CloudVeil Technology, Inc.</Company>
-    <PackageId>CloudVeil.GoProxyWrapper</PackageId>
+    <PackageId>CloudVeil.GoProxyDotNet</PackageId>
     <Description>This is a P/Invoke .NET wrapper for goproxy.</Description>
     <ReleaseNotes>
     </ReleaseNotes>
     <PackageProjectUrl>https://github.com/cloudveiltech/goproxy-managed</PackageProjectUrl>
-    <AssemblyVersion>0.4.28.0</AssemblyVersion>
-    <FileVersion>0.4.28.0</FileVersion>
+    <AssemblyVersion>0.4.31.0</AssemblyVersion>
+    <FileVersion>0.4.31.0</FileVersion>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>

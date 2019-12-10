@@ -3,12 +3,14 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"github.com/cloudveiltech/goproxy"
 	"io/ioutil"
 	"log"
+
+	"github.com/cloudveiltech/goproxy"
 )
 
 var defaultTLSConfig = &tls.Config{
+	Renegotiation:      tls.RenegotiateFreelyAsClient,
 	InsecureSkipVerify: true, // We should be able to set this to false, and then check verified chains against peer certificates to see if we have a trusted chain or not.
 	VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 		// for i := 0; i < len(rawCerts); i++ {
@@ -74,8 +76,8 @@ func setCA(caCert, caKey []byte) error {
 
 func verifyCerts(dnsName string, peerCerts []*x509.Certificate) (bool, error) {
 	opts := x509.VerifyOptions{
-		Roots: nil,
-		DNSName: dnsName,
+		Roots:         nil,
+		DNSName:       dnsName,
 		Intermediates: x509.NewCertPool(),
 	}
 
