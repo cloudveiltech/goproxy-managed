@@ -151,7 +151,7 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 		}
 	})
 
-	//proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
+	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
 	config.portHttp = portHttp
 	config.portHttps = portHttps
 
@@ -262,6 +262,8 @@ func Start() {
 						if category.ListType == Whitelist || matchTypes[index] == Excluded {
 							userData["blocked"] = false
 
+							
+							log.Printf("Whitelisted categories matched %s", request.URL.String())
 							if onWhitelistCallback != nil {
 								categoryInts := TransformMatcherCategoryArrayToIntArray(categories)
 
@@ -277,6 +279,7 @@ func Start() {
 					if categories[0].ListType == Blacklist || categories[0].ListType == BypassList {
 						userData["blocked"] = true
 
+						log.Printf("Blacklisted categories matched %s", request.URL.String())
 						if onBlacklistCallback != nil {
 							categoryInts := TransformMatcherCategoryArrayToIntArray(categories)
 
@@ -288,7 +291,11 @@ func Start() {
 
 						return request, response //goproxy.NewResponse(request, "text/plain", 401, "Blocked by rules")
 					}
+				} else {
+					log.Printf("No categories matched %s", request.URL.String())
 				}
+			} else {				
+				log.Printf("No categories loaded %s", request.URL.String())
 			}
 
 			return request, response
@@ -355,7 +362,7 @@ func runHttpsListener() {
 	log.Printf("runHttpsListener() %d", config.portHttps)
 
 	// listen to the TLS ClientHello but make it a CONNECT request instead
-	ln, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", config.portHttps))
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", config.portHttps))
 
 	if err != nil {
 		log.Fatalf("Error listening for https connections - %v", err)
