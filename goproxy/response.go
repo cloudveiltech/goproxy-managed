@@ -8,7 +8,7 @@ import (
 	"io/ioutil"
 	"strings"
 
-	"github.com/cloudveiltech/goproxy"
+	"github.com/elazarl/goproxy"
 )
 
 //export ResponseGetStatusCode

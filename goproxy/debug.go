@@ -6,32 +6,13 @@ import (
 	"net/http"
 	"os"
 	"runtime"
-	"runtime/debug"
 	"strings"
-	"time"
 )
 
 //import _ "net/http/pprof"
 
 func d(msg string) {
 	fmt.Fprint(os.Stderr, msg)
-}
-
-func monitorMemoryUsage() {
-	go func() {
-		for {
-			time.Sleep(30 * time.Second)
-			printMemUsage()
-			debug.FreeOSMemory()
-			if !IsRunning() {
-				return
-			}
-		}
-	}()
-
-	//	go func() {
-	//	http.ListenAndServe(":6060", nil)
-	//	}()
 }
 
 func printMemUsage() {

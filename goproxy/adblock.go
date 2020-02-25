@@ -5,10 +5,13 @@ import (
 	"encoding/gob"
 	"log"
 	"os"
-	"regexp"
+	"runtime/debug"
 	"strings"
 
 	"github.com/patriciy/adblock/adblock"
+
+	goahocorasick "github.com/anknown/ahocorasick"
+	lru "github.com/hashicorp/golang-lru"
 )
 
 const (
@@ -17,22 +20,27 @@ const (
 )
 
 const MAX_RULES_PER_MATCHER = 1000
-const MAX_CONTENT_SIZE_SCAN = 200 * 1024 //200kb max to scan
-var adblockMatcher *AdBlockMatcher
+const MAX_CONTENT_SIZE_SCAN = 1000 * 1024 //500kb max to scan
+var adBlockMatcher *AdBlockMatcher
 
 var defaultBlockPageContent = "%url% is blocked. Category %category%. Reason %reason%"
+var lruCache, _ = lru.New(1024)
+
+type cacheItem struct {
+	category  *string
+	matchType int
+}
 
 type MatcherCategory struct {
-	CategoryId     int32
-	ListType       int32
+	Category       string
 	Matchers       []*adblock.RuleMatcher
 	BlockedDomains map[string]bool
 }
 
 type PhraseCategory struct {
-	Category string
-	Phrases  []string
-	regexp   *regexp.Regexp
+	Category  string
+	Phrases   []string
+	processor *goahocorasick.Machine
 }
 
 type AdBlockMatcher struct {
@@ -48,19 +56,19 @@ type AdBlockMatcher struct {
 }
 
 func CreateMatcher() *AdBlockMatcher {
-	adblockMatcher = &AdBlockMatcher{
+	adBlockMatcher = &AdBlockMatcher{
 		RulesCnt:         0,
 		BlockPageContent: defaultBlockPageContent,
 	}
 
-	return adblockMatcher
+	return adBlockMatcher
 }
 
-func (am *AdBlockMatcher) addMatcher(categoryId int32, listType int32, bypass bool) {
+func (am *AdBlockMatcher) addMatcher(category string, bypass bool) {
 	matcher := adblock.NewMatcher()
 	var categoryMatcher *MatcherCategory
-	for _, element := range adblockMatcher.MatcherCategories {
-		if element.CategoryId == categoryId {
+	for _, element := range adBlockMatcher.MatcherCategories {
+		if element.Category == category {
 			categoryMatcher = element
 			break
 		}
@@ -68,8 +76,7 @@ func (am *AdBlockMatcher) addMatcher(categoryId int32, listType int32, bypass bo
 
 	if categoryMatcher == nil {
 		categoryMatcher = &MatcherCategory{
-			CategoryId:     categoryId,
-			ListType:       listType,
+			Category:       category,
 			BlockedDomains: make(map[string]bool),
 		}
 
@@ -81,8 +88,8 @@ func (am *AdBlockMatcher) addMatcher(categoryId int32, listType int32, bypass bo
 	}
 
 	categoryMatcher.Matchers = append(categoryMatcher.Matchers, matcher)
-	adblockMatcher.lastMatcher = matcher
-	adblockMatcher.lastCategory = categoryMatcher
+	adBlockMatcher.lastMatcher = matcher
+	adBlockMatcher.lastCategory = categoryMatcher
 }
 
 func (am *AdBlockMatcher) GetBlockPage(url string, category string, reason string) string {
@@ -92,72 +99,64 @@ func (am *AdBlockMatcher) GetBlockPage(url string, category string, reason strin
 	return tagsReplacer.Replace(am.BlockPageContent)
 }
 
-func (am *AdBlockMatcher) TestUrlBlockedWithMatcherCategories(url string, host string, referer string) ([]*MatcherCategory, []int) {
+func (am *AdBlockMatcher) TestUrlBlocked(url string, host string, referer string) (*string, int) {
+	if am.RulesCnt == 0 {
+		return nil, Included
+	}
+
+	cacheKey := url + host
+	if v, ok := lruCache.Get(cacheKey); ok {
+		item := v.(cacheItem)
+
+		log.Printf("Cache hit: %s %d", url, item.matchType)
+		return item.category, item.matchType
+	}
 	res1, res2 := am.matchRulesCategories(am.MatcherCategories, url, host, referer)
-	if len(res1) > 0 {
+	if res1 != nil {
+		lruCache.Add(cacheKey, cacheItem{category: res1, matchType: res2})
 		return res1, res2
 	}
 
 	if am.bypassEnabled {
-		return make([]*MatcherCategory, 0), make([]int, 0)
+		return nil, Included
 	}
 
-	return am.matchRulesCategories(am.BypassMatcherCategories, url, host, referer)
-}
-
-func TransformMatcherCategoryArrayToIntArray(categories []*MatcherCategory) []int32 {
-	ret := make([]int32, len(categories))
-
-	for i, category := range categories {
-		ret[i] = category.CategoryId
+	res1, res2 = am.matchRulesCategories(am.BypassMatcherCategories, url, host, referer)
+	if res1 != nil {
+		lruCache.Add(cacheKey, cacheItem{category: res1, matchType: res2})
 	}
 
-	return ret
+	lruCache.Add(cacheKey, cacheItem{category: nil, matchType: Included})
+	return res1, res2
 }
 
-func (am *AdBlockMatcher) TestUrlBlocked(url string, host string, referer string) []int32 {
-	categories, _ := am.TestUrlBlockedWithMatcherCategories(url, host, referer)
-	return TransformMatcherCategoryArrayToIntArray(categories)
-}
-
-func (am *AdBlockMatcher) matchRulesCategories(matcherCategories []*MatcherCategory, url string, host string, referer string) ([]*MatcherCategory, []int) {
+func (am *AdBlockMatcher) matchRulesCategories(matcherCategories []*MatcherCategory, url string, host string, referer string) (*string, int) {
 	rq := &adblock.Request{
 		URL:     url,
 		Domain:  host,
 		Referer: referer,
 	}
 
-	var matchedCategories []*MatcherCategory
-	var catergoriesMatchType []int //Included, Excluded
-
 	domainParts := strings.Split(host, ".")
-
 	for _, matcherCategory := range matcherCategories {
-		categoryMatched := false
 		for _, matcher := range matcherCategory.Matchers {
-			matched, categoryType, err := matcher.Match(rq)
+			matched, matchType, err := matcher.Match(rq)
 			if err != nil {
 				log.Printf("Error matching rule %s", err)
 			}
 
 			if matched {
-				categoryMatched = true
-				matchedCategories = append(matchedCategories, matcherCategory)
-				catergoriesMatchType = append(catergoriesMatchType, categoryType)
-				break
+				return &matcherCategory.Category, matchType
 			}
 		}
 
-		if !categoryMatched {
-			matched, matchType := matchDomain(domainParts, matcherCategory)
-			if matched {
-				matchedCategories = append(matchedCategories, matcherCategory)
-				catergoriesMatchType = append(catergoriesMatchType, matchType)
-			}
+		matched, matchType := matchDomain(domainParts, matcherCategory)
+		if matched {
+			return &matcherCategory.Category, matchType
 		}
 	}
 
-	return matchedCategories, catergoriesMatchType
+	return nil, Included
 }
 
 func matchDomain(domainParts []string, matcherCatergory *MatcherCategory) (bool, int) {
@@ -188,15 +187,20 @@ func (am *AdBlockMatcher) TestContentTypeIsFiltrable(contentType string) bool {
 }
 
 func (am *AdBlockMatcher) IsContentSmallEnoughToFilter(contentSize int64) bool {
-	return contentSize < MAX_CONTENT_SIZE_SCAN
+	return contentSize > 0 && contentSize < MAX_CONTENT_SIZE_SCAN
 }
 
 func (am *AdBlockMatcher) TestContainsForbiddenPhrases(str []byte) *string {
+	text := []rune(strings.ToLower(string(str)))
+
 	for _, phraseCategory := range am.PhraseCategories {
-		if phraseCategory.regexp != nil {
-			if phraseCategory.regexp.Find(str) != nil {
-				return &phraseCategory.Category
-			}
+		if phraseCategory.processor == nil {
+			continue
+		}
+
+		res := phraseCategory.processor.MultiPatternSearch(text, true)
+		if len(res) > 0 {
+			return &phraseCategory.Category
 		}
 	}
 
@@ -205,7 +209,7 @@ func (am *AdBlockMatcher) TestContainsForbiddenPhrases(str []byte) *string {
 
 func (am *AdBlockMatcher) AddBlockedPhrase(phrase string, category string) {
 	var phraseCategory *PhraseCategory = nil
-	for _, element := range adblockMatcher.PhraseCategories {
+	for _, element := range adBlockMatcher.PhraseCategories {
 		if element.Category == category {
 			phraseCategory = element
 			break
@@ -220,24 +224,31 @@ func (am *AdBlockMatcher) AddBlockedPhrase(phrase string, category string) {
 		am.PhraseCategories = append(am.PhraseCategories, phraseCategory)
 	}
 
-	phraseCategory.Phrases = append(phraseCategory.Phrases, regexp.QuoteMeta(phrase))
+	phraseCategory.Phrases = append(phraseCategory.Phrases, phrase)
 }
 
 func (am *AdBlockMatcher) Build() {
 	am.phrasesCount = 0
 	for _, phraseCategory := range am.PhraseCategories {
-		regexString := strings.Join(phraseCategory.Phrases, "|")
+		processor := new(goahocorasick.Machine)
 
-		var e error
-		phraseCategory.regexp, e = regexp.Compile("(?i)" + regexString)
-		if e != nil {
-			log.Printf("Error compiling matcher %s", e)
+		dict := [][]rune{}
+		for _, phrase := range phraseCategory.Phrases {
+			dict = append(dict, []rune(strings.ToLower(phrase)))
 		}
+		processor.Build(dict)
+		phraseCategory.processor = processor
+
 		am.phrasesCount += len(phraseCategory.Phrases)
 	}
 
+	if len(am.MatcherCategories) == 0 {
+		return
+	}
 	matchers := am.MatcherCategories[len(am.MatcherCategories)-1].Matchers
 	am.lastMatcher = matchers[len(matchers)-1]
+
+	debug.FreeOSMemory()
 }
 
 func (am *AdBlockMatcher) RulesCount() int {
@@ -283,14 +294,14 @@ func LoadMatcherFromFile(filePath string) *AdBlockMatcher {
 
 	decoder := gob.NewDecoder(stream)
 
-	adblockMatcher = &AdBlockMatcher{
+	adBlockMatcher = &AdBlockMatcher{
 		RulesCnt: 0,
 	}
-	err = decoder.Decode(&adblockMatcher)
+	err = decoder.Decode(&adBlockMatcher)
 	if err != nil {
 		log.Printf("Decoder error %s", err)
 	}
-	return adblockMatcher
+	return adBlockMatcher
 }
 
 func (am *AdBlockMatcher) EnableBypass() {

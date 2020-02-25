@@ -4,19 +4,22 @@ import "C"
 
 import (
 	"bufio"
+	"io/ioutil"
 	"log"
-	"net/http"
-	"net/textproto"
-	"strings"
+	"os"
 	"unsafe"
 )
 
-var adBlockMatcher *AdBlockMatcher = nil
-
-var onWhitelistCallback unsafe.Pointer
-var onBlacklistCallback unsafe.Pointer
+var adBlockBlacklistCallback unsafe.Pointer
 
 var adBlockMatchers map[int32]*AdBlockMatcher
+
+const (
+	Blacklist   = 1
+	Whitelist   = 2
+	BypassList  = 3
+	TextTrigger = 4
+)
 
 //export AdBlockMatcherInitialize
 func AdBlockMatcherInitialize() {
@@ -34,9 +37,41 @@ func AdBlockMatcherInitialize() {
 }
 
 //export AdBlockMatcherParseRuleFile
-func AdBlockMatcherParseRuleFile(fileName string, categoryId int32, listType int32) {
-	log.Printf("AdBlockMatcherParseRuleFile11(%s, %d, %d)", fileName, categoryId, listType)
-	adBlockMatcher.ParseRuleFile(fileName, categoryId, listType)
+func AdBlockMatcherParseRuleFile(fileNameC *C.char, categoryIdC *C.char, listType int32) bool {
+	fileName := C.GoString(fileNameC)
+	categoryId := C.GoString(categoryIdC)
+
+	fileHandle, err := os.Open(fileName)
+	if err != nil {
+		return false
+	}
+	defer fileHandle.Close()
+
+	scanner := bufio.NewScanner(fileHandle)
+
+	if listType == TextTrigger {
+		adBlockMatcher.addPhrasesFromScanner(scanner, categoryId)
+	} else {
+		adBlockMatcher.addRulesFromScanner(scanner, categoryId, listType == BypassList)
+	}
+	return true
+}
+
+//export AdBlockMatcherSetBlockedPageContent
+func AdBlockMatcherSetBlockedPageContent(contentC *C.char) {
+	blockPagePath := C.GoString(contentC)
+	fileHandle, err := os.Open(blockPagePath)
+	if err != nil {
+		log.Printf("Error reading block page %s", err)
+		return
+	}
+	defer fileHandle.Close()
+	content, e := ioutil.ReadAll(fileHandle)
+	if e != nil {
+		log.Printf("Error reading block page %s", e)
+		return
+	}
+	adBlockMatcher.BlockPageContent = string(content)
 }
 
 //export AdBlockMatcherSave
@@ -47,46 +82,6 @@ func AdBlockMatcherSave(fileName string) {
 //export AdBlockMatcherLoad
 func AdBlockMatcherLoad(fileName string) {
 	adBlockMatcher = LoadMatcherFromFile(fileName)
-}
-
-//export AdBlockMatcherTestUrlMatch
-func AdBlockMatcherTestUrlMatch(url string, host string, headersRaw string) []int32 {
-	var headers http.Header = nil
-
-	if len(headersRaw) > 0 {
-		reader := bufio.NewReader(strings.NewReader(headersRaw + "\r\n"))
-		tp := textproto.NewReader(reader)
-
-		mimeHeader, err := tp.ReadMIMEHeader()
-		if err != nil {
-			log.Printf("MIME Header parse error: %s", err)
-		}
-
-		headers = http.Header(mimeHeader)
-	}
-
-	return adBlockMatcher.TestUrlBlocked(url, host, headers.Get("referer"))
-}
-
-//export AdBlockMatcherAreListsLoaded
-func AdBlockMatcherAreListsLoaded() bool {
-	if adBlockMatcher == nil {
-		return false
-	} else if adBlockMatcher.MatcherCategories == nil && adBlockMatcher.BypassMatcherCategories == nil {
-		return false
-	} else {
-		return len(adBlockMatcher.MatcherCategories) > 0 || len(adBlockMatcher.BypassMatcherCategories) > 0
-	}
-}
-
-//export AdBlockMatcherSetWhitelistCallback
-func AdBlockMatcherSetWhitelistCallback(callback unsafe.Pointer) {
-	onWhitelistCallback = callback
-}
-
-//export AdBlockMatcherSetBlacklistCallback
-func AdBlockMatcherSetBlacklistCallback(callback unsafe.Pointer) {
-	onBlacklistCallback = callback
 }
 
 //export AdBlockMatcherEnableBypass
