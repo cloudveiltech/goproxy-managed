@@ -74,11 +74,11 @@ func (am *AdBlockMatcher) ParseZipRulesFile(file *zip.File) {
 		} else if strings.Contains(file.Name, ".bypass") {
 			am.addMatcher(categoryName, true)
 			log.Printf("Opening bypass %s", file.Name)
-			am.addRulesFromScanner(scanner, categoryName, true)
+			am.addRulesFromScanner(scanner, categoryName, false, true)
 		} else if strings.Contains(file.Name, ".rules") {
 			am.addMatcher(categoryName, false)
 			log.Printf("Opening rules %s", file.Name)
-			am.addRulesFromScanner(scanner, categoryName, false)
+			am.addRulesFromScanner(scanner, categoryName, false, false)
 		} else {
 			log.Printf("File type recognition failed %s", file.Name)
 		}
@@ -99,9 +99,12 @@ func (am *AdBlockMatcher) addBlockPageFromZipFile(file *zip.File) {
 	am.BlockPageContent = string(content)
 }
 
-func (am *AdBlockMatcher) addRulesFromScanner(scanner *bufio.Scanner, categoryName string, bypass bool) {
+func (am *AdBlockMatcher) addRulesFromScanner(scanner *bufio.Scanner, categoryName string, whitelist bool, bypass bool) {
 	for scanner.Scan() {
 		line := scanner.Text()
+		if whitelist && !strings.HasPrefix(line, "@@") {
+			line = "@@" + line
+		}
 		am.AddRule(line, categoryName, bypass)
 	}
 }

@@ -52,7 +52,7 @@ func AdBlockMatcherParseRuleFile(fileNameC *C.char, categoryIdC *C.char, listTyp
 	if listType == TextTrigger {
 		adBlockMatcher.addPhrasesFromScanner(scanner, categoryId)
 	} else {
-		adBlockMatcher.addRulesFromScanner(scanner, categoryId, listType == BypassList)
+		adBlockMatcher.addRulesFromScanner(scanner, categoryId, listType == Whitelist, listType == BypassList)
 	}
 	return true
 }
