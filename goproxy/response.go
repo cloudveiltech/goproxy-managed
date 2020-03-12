@@ -5,10 +5,16 @@ import (
 )
 import (
 	"bytes"
+	"compress/gzip"
+	"io"
 	"io/ioutil"
+	"log"
 	"strings"
 
+	"compress/flate"
+
 	"github.com/cloudveiltech/goproxy"
+	"github.com/dsnet/compress/brotli"
 )
 
 //export ResponseGetStatusCode
@@ -50,9 +56,46 @@ func ResponseGetBodyAsString(id int64, res *string) bool {
 	if !ResponseGetBody(id, &bytes) {
 		return false
 	}
+	response := getSessionResponse(id)
+	bytes = decodeResponseCompression(response.Header.Get("Content-Encoding"), bytes)
 	*res = string(bytes[:])
 
 	return true
+}
+
+func decodeResponseCompression(contentEncoding string, body []byte) []byte {
+	switch contentEncoding {
+	case "gzip":
+		reader, err := gzip.NewReader(bytes.NewBuffer(body))
+		return readReader(reader, err)
+	case "br":
+		reader, err := brotli.NewReader(bytes.NewBuffer(body), nil)
+		if err == nil {
+			buf := make([]byte, 1024)
+			body = make([]byte, 0)
+			defer reader.Close()
+			n, _ := reader.Read(buf)
+			for n > 0 {
+				body = append(body, buf...)
+				n, _ = reader.Read(buf)
+			}
+			return body
+		}
+	case "deflate":
+		reader := flate.NewReader(bytes.NewBuffer(body))
+		return readReader(reader, nil)
+	}
+	return body
+}
+
+func readReader(reader io.ReadCloser, err error) []byte {
+	if err == nil {
+		defer reader.Close()
+		body, _ := ioutil.ReadAll(reader)
+		return body
+	}
+	log.Print("Reader errror %v", err)
+	return nil
 }
 
 //export ResponseHasBody

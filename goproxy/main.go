@@ -23,7 +23,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/tls"
 	"fmt"
 	"io"
 	"log"
@@ -31,7 +30,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -51,9 +52,13 @@ var (
 
 	beforeRequestCallback  unsafe.Pointer
 	beforeResponseCallback unsafe.Pointer
+
+	portWriteLock sync.Mutex
+	portMap       = make(map[int]int)
 )
 
 const proxyNextActionKey string = "__proxyNextAction__"
+const DEFAULT_HTTPS_PORT = 443
 
 //export SetOnBeforeRequestCallback
 func SetOnBeforeRequestCallback(callback unsafe.Pointer) {
@@ -77,10 +82,10 @@ func SetProxyLogFile(logFile string) {
 
 //export Init
 func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
-	goproxy.SetDefaultTlsConfig(defaultTLSConfig)
 	loadAndSetCa(certFile, keyFile)
 	proxy = goproxy.NewProxyHttpServer()
 	proxy.Verbose = true
+	proxy.Http2Handler = serveHttp2Filtering
 
 	if proxy.Verbose {
 		log.Printf("certFilePath %s", certFile)
@@ -99,58 +104,6 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 		proxy.ServeHTTP(w, req)
 	})
 
-	proxy.WebSocketHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		h, ok := w.(http.Hijacker)
-		if !ok {
-			return
-		}
-
-		client, _, err := h.Hijack()
-		if err != nil {
-			log.Printf("Websocket error Hijack %s", err)
-			return
-		}
-
-		remote := dialRemote(req)
-		if remote == nil {
-			return
-		}
-
-		defer remote.Close()
-		defer client.Close()
-
-		log.Printf("Got websocket request %s %s", req.Host, req.URL)
-
-		req.Write(remote)
-		go func() {
-			for {
-				n, err := io.Copy(remote, client)
-				if err != nil {
-					log.Printf("Websocket error request %s", err)
-					return
-				}
-				if n == 0 {
-					log.Printf("Websocket nothing requested close")
-					return
-				}
-				time.Sleep(time.Millisecond) //reduce CPU usage due to infinite nonblocking loop
-			}
-		}()
-
-		for {
-			n, err := io.Copy(client, remote)
-			if err != nil {
-				log.Printf("Websocket error response %s", err)
-				return
-			}
-			if n == 0 {
-				log.Printf("Websocket nothing responded close")
-				return
-			}
-			time.Sleep(time.Millisecond) //reduce CPU usage due to infinite nonblocking loop
-		}
-	})
-
 	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
 	config.portHttp = portHttp
 	config.portHttps = portHttps
@@ -160,44 +113,9 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 	}
 }
 
-func dialRemote(req *http.Request) net.Conn {
-
-	port := ""
-	if !strings.Contains(req.Host, ":") {
-		if req.URL.Scheme == "https" {
-			port = ":443"
-		} else {
-			port = ":80"
-		}
-	}
-
-	log.Printf("Custom dialer %s", req.Host+port)
-
-	if req.URL.Scheme == "https" {
-		conf := tls.Config{
-			InsecureSkipVerify: true,
-			Renegotiation: tls.RenegotiateFreelyAsClient,
-		}
-		remote, err := tls.Dial("tcp", req.Host+port, &conf)
-		if err != nil {
-			log.Printf("Websocket error connect %s", err)
-			return nil
-		}
-		return remote
-	} else {
-		remote, err := net.Dial("tcp", req.Host+port)
-		if err != nil {
-			log.Printf("Websocket error connect %s", err)
-			return nil
-		}
-		return remote
-	}
-}
-
 func startHttpServer() *http.Server {
 	srv := &http.Server{Addr: fmt.Sprintf(":%d", config.portHttp)}
 	srv.Handler = proxy
-
 	go func() {
 		err := srv.ListenAndServe()
 		if err != nil {
@@ -209,6 +127,16 @@ func startHttpServer() *http.Server {
 
 	// returning reference so caller can call Shutdown()
 	return srv
+}
+
+//export SetDestPortForLocalPort
+func SetDestPortForLocalPort(localPort int, destPort int) {
+	if destPort == DEFAULT_HTTPS_PORT {
+		return
+	}
+	portWriteLock.Lock()
+	defer portWriteLock.Unlock()
+	portMap[localPort] = destPort
 }
 
 //export Start
@@ -262,7 +190,6 @@ func Start() {
 						if category.ListType == Whitelist || matchTypes[index] == Excluded {
 							userData["blocked"] = false
 
-							
 							log.Printf("Whitelisted categories matched %s", request.URL.String())
 							if onWhitelistCallback != nil {
 								categoryInts := TransformMatcherCategoryArrayToIntArray(categories)
@@ -294,8 +221,6 @@ func Start() {
 				} else {
 					log.Printf("No categories matched %s", request.URL.String())
 				}
-			} else {				
-				log.Printf("No categories loaded %s", request.URL.String())
 			}
 
 			return request, response
@@ -379,30 +304,85 @@ func runHttpsListener() {
 		go func(c net.Conn) {
 			tlsConn, err := vhost.TLS(c)
 			if err != nil {
-				log.Printf("Error accepting new connection - %v", err)
+				log.Printf("Assuming plain http connection - %v", err)
+				chainReqToHttp(tlsConn)
+				return
 			}
-			if tlsConn.Host() == "" {
-				log.Printf("Cannot support non-SNI enabled clients")
+
+			localPort := tlsConn.RemoteAddr().(*net.TCPAddr).Port
+			port, exists := portMap[localPort]
+
+			if !exists {
+				port = DEFAULT_HTTPS_PORT
+			}
+
+			if proxy.Verbose {
+				log.Printf("Reading dest port for %d is %d", localPort, port)
+			}
+
+			host := tlsConn.Host()
+			if host == "" {
+				log.Printf("Cannot support client")
 				return
 			}
 
 			if proxy.Verbose {
-				log.Printf("Https handler called for %s", tlsConn.Host())
+				log.Printf("Https handler called for %s:%s", host, strconv.Itoa(port))
 			}
 
+			host = net.JoinHostPort(host, strconv.Itoa(port))
+			resp := dumbResponseWriter{tlsConn}
 			connectReq := &http.Request{
 				Method: "CONNECT",
 				URL: &url.URL{
-					Opaque: tlsConn.Host(),
-					Host:   net.JoinHostPort(tlsConn.Host(), "443"),
+					Opaque: host,
+					Host:   host,
 				},
-				Host:   tlsConn.Host(),
+				Host:   host,
 				Header: make(http.Header),
 			}
 
-			resp := dumbResponseWriter{tlsConn}
 			proxy.ServeHTTP(resp, connectReq)
 		}(c)
+	}
+}
+
+func chainReqToHttp(client net.Conn) {
+	remote, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", config.portHttp))
+	if err != nil {
+		log.Printf("chainReqToHttp error connect %s", err)
+		return
+	}
+
+	defer remote.Close()
+	defer client.Close()
+
+	go func() {
+		for {
+			n, err := io.Copy(remote, client)
+			if err != nil {
+				log.Printf("error request %s", err)
+				return
+			}
+			if n == 0 {
+				log.Printf("nothing requested close")
+				return
+			}
+			time.Sleep(time.Millisecond) //reduce CPU usage due to infinite nonblocking loop
+		}
+	}()
+
+	for {
+		n, err := io.Copy(client, remote)
+		if err != nil {
+			log.Printf("error response %s", err)
+			return
+		}
+		if n == 0 {
+			log.Printf("nothing responded close")
+			return
+		}
+		time.Sleep(time.Millisecond) //reduce CPU usage due to infinite nonblocking loop
 	}
 }
 
@@ -453,22 +433,18 @@ func main() {
 
 func test() {
 	log.Printf("main: starting HTTP server")
-/*
-	AdBlockMatcherInitialize()
-	adBlockMatcher.ParseRuleFile("c:/Users/dgora/Downloads/class_33/whitelist.rules", 0, Blacklist)
-	categories, matchTypes := adBlockMatcher.TestUrlBlockedWithMatcherCategories("https://mapbox.com/", "mapbox.com", "")
-	if len(categories) > 0 {
-		for index := range categories {
-			if matchTypes[index] == Excluded {
-				log.Print("Matched Excluded")
-			} else {
-				log.Print("Matched Included")
-			}
+	/*
+		tlsConfig := &tls.Config{
+			NextProtos: []string{"h2"},
 		}
-
-	} else {
-		log.Print("not matched")
-	}*/
+		client := &http.Client{}
+		http2.ConfigureTransport(client)
+		resp, err := client.Get("https://app-ab09.marketo.com/index.php/form/getForm?munchkinId=711-AVJ-377&form=2548&url=https%3A%2F%2Fwww.qsc.com%2Fresources%2Fsoftware-and-firmware%2Fq-sys-designer-software%2Farchives%2F822%2F&callback=jQuery112401509716090828621_1583818664077&_=1583818664078")
+		if err != nil {
+			return
+		}
+		log.Printf("%d", resp.StatusCode)
+	*/
 	Init(14500, 14501, "rootCertificate.pem", "rootPrivateKey.pem")
 	Start()
 
