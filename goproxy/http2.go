@@ -18,16 +18,20 @@ import (
 )
 
 type Http2Handler struct {
-	lastHttpResponse            *http.Response
-	lastHttpRequest             *http.Request
-	responseHeaderPriorityParam http2.PriorityParam
+	lastHttpResponse map[uint32]*http.Response
+	lastHttpRequest  map[uint32]*http.Request
+	lastHeadersBlock map[uint32]*http2.HeadersFrameParam
 }
 
 func serveHttp2Filtering(r *http.Request, rawClientTls *tls.Conn, remote *tls.Conn) bool {
 	log.Print("Running http2 handler for " + r.URL.String())
 	ctx := &goproxy.ProxyCtx{Req: r, Session: 1}
 
-	http2Handler := &Http2Handler{}
+	http2Handler := &Http2Handler{
+		lastHttpResponse: make(map[uint32]*http.Response),
+		lastHeadersBlock: make(map[uint32]*http2.HeadersFrameParam),
+		lastHttpRequest:  make(map[uint32]*http.Request),
+	}
 	go func() {
 		http2Handler.processHttp2Stream(rawClientTls, remote, ctx)
 	}()
@@ -93,50 +97,47 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 		log.Printf("ReadFrame client %v, err: %v", client, err)
 		return false
 	}
-
-	if proxy.Verbose {
-		log.Printf("Frame read %v, client: %v", f, client)
-	}
+	/*
+		if proxy.Verbose {
+			log.Printf("Frame read %v, client: %v", f, client)
+		}*/
 	switch f.Header().Type {
 	case http2.FrameData:
 		fr := f.(*http2.DataFrame)
-		if http2Handler.lastHttpResponse != nil && !client {
-			contentType := http2Handler.lastHttpResponse.Header.Get("Content-Type")
+		lastHttpResponse := http2Handler.lastHttpResponse[f.Header().StreamID]
+		if lastHttpResponse != nil && !client {
+			contentType := lastHttpResponse.Header.Get("Content-Type")
 			if isContentTypeFilterable(contentType) {
 				body := fr.Data()
 
-				putResponseBody(body, http2Handler.lastHttpResponse)
-				resp := proxy.FilterResponse(http2Handler.lastHttpResponse, ctx)
+				putResponseBody(body, lastHttpResponse)
+				resp := proxy.FilterResponse(lastHttpResponse, ctx)
 
-				if resp != http2Handler.lastHttpResponse { //new response
+				if resp != lastHttpResponse { //new response
 					directFramer.WriteHeaders(http2.HeadersFrameParam{
 						StreamID:      f.Header().StreamID,
 						BlockFragment: encodeHeaders(resp),
 						EndStream:     false,
 						EndHeaders:    true,
 						PadLength:     0,
-						Priority:      http2Handler.responseHeaderPriorityParam,
+						Priority:      http2.PriorityParam{},
 					})
 					buf := new(bytes.Buffer)
 					buf.ReadFrom(resp.Body)
 					directFramer.WriteData(f.Header().StreamID, true, buf.Bytes())
-					return true
+					return false
 				}
-			} else {
-				directFramer.WriteHeaders(http2.HeadersFrameParam{
-					StreamID:      f.Header().StreamID,
-					BlockFragment: encodeHeaders(http2Handler.lastHttpResponse),
-					EndStream:     false,
-					EndHeaders:    true,
-					PadLength:     0,
-					Priority:      http2Handler.responseHeaderPriorityParam,
-				})
+			}
+
+			header, ok := http2Handler.lastHeadersBlock[f.Header().StreamID]
+			if ok {
+				directFramer.WriteHeaders(*header)
+				delete(http2Handler.lastHeadersBlock, f.Header().StreamID)
 			}
 		}
 		directFramer.WriteData(f.Header().StreamID, fr.StreamEnded(), fr.Data())
 	case http2.FrameHeaders:
 		fr := f.(*http2.HeadersFrame)
-		http2Handler.responseHeaderPriorityParam = fr.Priority
 
 		decoder := hpack.NewDecoder(2048, nil)
 		hf, _ := decoder.DecodeFull(fr.HeaderBlockFragment())
@@ -146,8 +147,9 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 			lastHeader[h.Name] = h.Value
 		}
 		if client && len(lastHeader) > 0 {
-			http2Handler.lastHttpRequest = makeHttpRequest(nil, lastHeader)
-			_, resp := proxy.FilterRequest(http2Handler.lastHttpRequest, ctx)
+			request := makeHttpRequest(nil, lastHeader)
+			http2Handler.lastHttpRequest[f.Header().StreamID] = request
+			_, resp := proxy.FilterRequest(request, ctx)
 			if resp != nil {
 				reverseFramer.WriteHeaders(http2.HeadersFrameParam{
 					StreamID:      f.Header().StreamID,
@@ -164,10 +166,10 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 				return false
 			}
 		} else if !client && len(lastHeader) > 0 {
-			http2Handler.lastHttpResponse = makeHttpResponse(nil, lastHeader)
-			http2Handler.lastHttpResponse.Request = http2Handler.lastHttpRequest
+			http2Handler.lastHttpResponse[f.Header().StreamID] = makeHttpResponse(nil, lastHeader)
+			http2Handler.lastHttpResponse[f.Header().StreamID].Request = http2Handler.lastHttpRequest[f.Header().StreamID]
 		}
-		if client || len(lastHeader) == 0 {
+		if client || len(lastHeader) == 0 || fr.StreamEnded() {
 			directFramer.WriteHeaders(http2.HeadersFrameParam{
 				StreamID:      f.Header().StreamID,
 				BlockFragment: fr.HeaderBlockFragment(),
@@ -176,6 +178,19 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 				PadLength:     0,
 				Priority:      fr.Priority,
 			})
+		} else {
+			bufferCopy := make([]byte, len(fr.HeaderBlockFragment()))
+			copy(bufferCopy, fr.HeaderBlockFragment())
+			header := http2.HeadersFrameParam{
+				StreamID:      f.Header().StreamID,
+				BlockFragment: bufferCopy,
+				EndStream:     fr.StreamEnded(),
+				EndHeaders:    fr.HeadersEnded(),
+				PadLength:     0,
+				Priority:      fr.Priority,
+			}
+
+			http2Handler.lastHeadersBlock[f.Header().StreamID] = &header
 		}
 	case http2.FramePriority:
 		fr := f.(*http2.PriorityFrame)
@@ -290,9 +305,6 @@ func encodeHeaders(resp *http.Response) []byte {
 	writeHeader(encoder, ":status", strconv.Itoa(resp.StatusCode))
 	for k, vv := range resp.Header {
 		lowKey := strings.ToLower(k)
-		if lowKey == "host" {
-			continue
-		}
 		for _, v := range vv {
 			writeHeader(encoder, lowKey, v)
 		}

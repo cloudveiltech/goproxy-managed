@@ -23,6 +23,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"log"
@@ -104,6 +105,14 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 		proxy.ServeHTTP(w, req)
 	})
 
+	proxy.Tr = &http.Transport{
+		MaxIdleConnsPerHost: 10,
+		MaxIdleConns:        1000,
+		IdleConnTimeout:     time.Minute * 10,
+		TLSClientConfig: &tls.Config{
+			NextProtos: []string{"http/1.1"},
+		},
+	}
 	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
 	config.portHttp = portHttp
 	config.portHttps = portHttps

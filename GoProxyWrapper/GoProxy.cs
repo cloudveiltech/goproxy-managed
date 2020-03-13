@@ -1,6 +1,7 @@
 ﻿using GoProxyWrapper;
 using System;
 using System.Diagnostics;
+using System.Net;
 using System.Runtime.InteropServices;
 
 namespace GoproxyWrapper
@@ -92,6 +93,17 @@ namespace GoproxyWrapper
         public void SetProxyLogFile(string logFile)
         {
             ProxyNativeWrapper.SetProxyLogFile(logFile);
+        }
+
+        public void SetDestPortForLocalPort(int localPort, int destPort)
+        {
+            if (BitConverter.IsLittleEndian)
+            {
+                localPort = (ushort)IPAddress.NetworkToHostOrder((short)localPort);
+                destPort = (ushort)IPAddress.NetworkToHostOrder((short)destPort);
+            }
+
+            ProxyNativeWrapper.SetDestPortForLocalPort(localPort, destPort);
         }
 
         public bool IsRunning
