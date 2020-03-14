@@ -34,6 +34,8 @@ func AdBlockMatcherInitialize() {
 	if oldMatcher != nil {
 		adBlockMatcher.bypassEnabled = oldMatcher.bypassEnabled
 	}
+
+	lruCache.Purge()
 }
 
 //export AdBlockMatcherParseRuleFile
@@ -48,6 +50,10 @@ func AdBlockMatcherParseRuleFile(fileNameC *C.char, categoryIdC *C.char, listTyp
 	defer fileHandle.Close()
 
 	scanner := bufio.NewScanner(fileHandle)
+
+	log.Printf("Parsing category %s file %s", categoryId, fileName)
+
+	adBlockMatcher.addMatcher(categoryId, listType == BypassList)
 
 	if listType == TextTrigger {
 		adBlockMatcher.addPhrasesFromScanner(scanner, categoryId)
