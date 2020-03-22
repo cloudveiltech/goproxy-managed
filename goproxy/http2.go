@@ -21,6 +21,7 @@ type Http2Handler struct {
 	lastHttpResponse map[uint32]*http.Response
 	lastHttpRequest  map[uint32]*http.Request
 	lastHeadersBlock map[uint32]*http2.HeadersFrameParam
+	data             map[uint32]*bytes.Buffer
 }
 
 func serveHttp2Filtering(r *http.Request, rawClientTls *tls.Conn, remote *tls.Conn) bool {
@@ -31,6 +32,7 @@ func serveHttp2Filtering(r *http.Request, rawClientTls *tls.Conn, remote *tls.Co
 		lastHttpResponse: make(map[uint32]*http.Response),
 		lastHeadersBlock: make(map[uint32]*http2.HeadersFrameParam),
 		lastHttpRequest:  make(map[uint32]*http.Request),
+		data:             make(map[uint32]*bytes.Buffer),
 	}
 	go func() {
 		http2Handler.processHttp2Stream(rawClientTls, remote, ctx)
@@ -61,7 +63,7 @@ func (http2Handler *Http2Handler) processHttp2Stream(local *tls.Conn, remote *tl
 		return
 	}
 	if string(b) != preface {
-		log.Printf("ReadFrame: preface")
+		log.Printf("ReadFrame: preface error")
 		return
 	}
 	remote.Write(b)
@@ -69,11 +71,11 @@ func (http2Handler *Http2Handler) processHttp2Stream(local *tls.Conn, remote *tl
 	directFramer := http2.NewFramer(remote, local)
 	reverseFramer := http2.NewFramer(local, remote)
 
-	defer remote.Close()
-	defer local.Close()
+	//	defer remote.Close()
+	//	defer local.Close()
 	go func() {
-		defer remote.Close()
-		defer local.Close()
+		//		defer remote.Close()
+		//	defer local.Close()
 		for {
 			if !http2Handler.readFrame(directFramer, reverseFramer, ctx, true) {
 				return
@@ -86,30 +88,35 @@ func (http2Handler *Http2Handler) processHttp2Stream(local *tls.Conn, remote *tl
 		}
 	}
 }
+
 func isContentTypeFilterable(contentType string) bool {
-	return strings.Contains(contentType, "text") ||
-		strings.Contains(contentType, "javascript") ||
+	return strings.Contains(contentType, "html") ||
 		strings.Contains(contentType, "json")
 }
+
 func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.Framer, ctx *goproxy.ProxyCtx, client bool) bool {
 	f, err := directFramer.ReadFrame()
 	if err != nil {
 		log.Printf("ReadFrame client %v, err: %v", client, err)
 		return false
 	}
-	/*
-		if proxy.Verbose {
-			log.Printf("Frame read %v, client: %v", f, client)
-		}*/
+
 	switch f.Header().Type {
 	case http2.FrameData:
 		fr := f.(*http2.DataFrame)
+		body := fr.Data()
+		bodyBuf, ok := http2Handler.data[f.Header().StreamID]
+		if !ok {
+			bodyBuf = new(bytes.Buffer)
+			http2Handler.data[f.Header().StreamID] = bodyBuf
+		}
+		bodyBuf.Write(body)
+
 		lastHttpResponse := http2Handler.lastHttpResponse[f.Header().StreamID]
-		if lastHttpResponse != nil && !client {
+		if lastHttpResponse != nil && !client && fr.StreamEnded() {
 			contentType := lastHttpResponse.Header.Get("Content-Type")
 			if isContentTypeFilterable(contentType) {
-				body := fr.Data()
-
+				body := bodyBuf.Bytes()
 				putResponseBody(body, lastHttpResponse)
 				resp := proxy.FilterResponse(lastHttpResponse, ctx)
 
@@ -125,6 +132,8 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 					buf := new(bytes.Buffer)
 					buf.ReadFrom(resp.Body)
 					directFramer.WriteData(f.Header().StreamID, true, buf.Bytes())
+
+					delete(http2Handler.data, f.Header().StreamID)
 					return false
 				}
 			}
@@ -135,12 +144,31 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 				delete(http2Handler.lastHeadersBlock, f.Header().StreamID)
 			}
 		}
-		directFramer.WriteData(f.Header().StreamID, fr.StreamEnded(), fr.Data())
+
+		if fr.StreamEnded() {
+			dataToSend := bodyBuf.Bytes()
+			chunkSize := 15 * 1024
+			for i := 0; i < len(dataToSend); i += chunkSize {
+				end := i + chunkSize
+				streamEnd := false
+				if end > len(dataToSend) {
+					end = len(dataToSend) - 1
+					streamEnd = true
+				}
+
+				directFramer.WriteData(f.Header().StreamID, streamEnd, dataToSend[i:end])
+			}
+			delete(http2Handler.data, f.Header().StreamID)
+		}
 	case http2.FrameHeaders:
 		fr := f.(*http2.HeadersFrame)
 
-		decoder := hpack.NewDecoder(2048, nil)
-		hf, _ := decoder.DecodeFull(fr.HeaderBlockFragment())
+		decoder := hpack.NewDecoder(204800, nil)
+		headerBlock := fr.HeaderBlockFragment()
+		hf, err := decoder.DecodeFull(headerBlock)
+		if err != nil {
+			log.Printf("Decode header err %v", err)
+		}
 
 		lastHeader := make(map[string]string)
 		for _, h := range hf {

@@ -110,7 +110,8 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 		MaxIdleConns:        1000,
 		IdleConnTimeout:     time.Minute * 10,
 		TLSClientConfig: &tls.Config{
-			NextProtos: []string{"http/1.1"},
+			NextProtos:         []string{"http/1.1"},
+			InsecureSkipVerify: true,
 		},
 	}
 	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
@@ -169,7 +170,6 @@ func Start() {
 			//dumpRequest(r)
 			request := r
 			var response *http.Response = nil
-
 			session := session{r, nil, false}
 			id := saveSessionToInteropMap(ctx.Session, &session)
 			defer removeSessionFromInteropMap(id)
@@ -238,6 +238,7 @@ func Start() {
 	proxy.OnResponse().DoFunc(
 		func(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
 			response := resp
+
 			var isVerified bool = true
 
 			if response != nil && response.TLS != nil {

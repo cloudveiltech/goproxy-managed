@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"io/ioutil"
 	"log"
+	"time"
 
 	"github.com/cloudveiltech/goproxy"
 )
@@ -58,6 +59,7 @@ func verifyCerts(dnsName string, peerCerts []*x509.Certificate) (bool, error) {
 		Roots:         nil,
 		DNSName:       dnsName,
 		Intermediates: x509.NewCertPool(),
+		CurrentTime:   time.Now(),
 	}
 
 	for i, cert := range peerCerts {

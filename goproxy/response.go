@@ -5,13 +5,13 @@ import (
 )
 import (
 	"bytes"
-	"compress/gzip"
 	"io"
 	"io/ioutil"
 	"log"
 	"strings"
 
 	"compress/flate"
+	"compress/gzip"
 
 	"github.com/cloudveiltech/goproxy"
 	"github.com/dsnet/compress/brotli"
@@ -41,11 +41,20 @@ func ResponseGetBody(id int64, res *[]byte) bool {
 	buf := new(bytes.Buffer)
 	buf.ReadFrom(response.Body)
 
-	*res = buf.Bytes()
+	result := buf.Bytes()
+	if response.Uncompressed || !adblockMatcher.TestContentTypeIsFiltrable(response.Header.Get("Content-Type")) {
+		*res = result
+	} else {
+		*res = decodeResponseCompression(response.Header.Get("Content-Encoding"), result)
+		if *res == nil {
+			log.Print("Decoded nil response")
+			*res = result
+		}
+	}
 
 	//since we'd read all body - we need to recreate reader for client here
 	response.Body.Close()
-	response.Body = ioutil.NopCloser(bytes.NewBuffer(*res))
+	response.Body = ioutil.NopCloser(bytes.NewBuffer(result))
 
 	return true
 }
@@ -56,8 +65,6 @@ func ResponseGetBodyAsString(id int64, res *string) bool {
 	if !ResponseGetBody(id, &bytes) {
 		return false
 	}
-	response := getSessionResponse(id)
-	bytes = decodeResponseCompression(response.Header.Get("Content-Encoding"), bytes)
 	*res = string(bytes[:])
 
 	return true
@@ -94,7 +101,7 @@ func readReader(reader io.ReadCloser, err error) []byte {
 		body, _ := ioutil.ReadAll(reader)
 		return body
 	}
-	log.Print("Reader errror %v", err)
+	log.Printf("Reader errror %v", err)
 	return nil
 }
 
