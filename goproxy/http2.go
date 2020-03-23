@@ -41,20 +41,6 @@ func serveHttp2Filtering(r *http.Request, rawClientTls *tls.Conn, remote *tls.Co
 	return true
 }
 
-/*
-func processHttp2Stream1(read *tls.Conn, write *tls.Conn) {
-	for {
-		n, err := io.Copy(write, read)
-		if err != nil {
-			return
-		}
-		if n == 0 {
-			return
-		}
-		time.Sleep(time.Millisecond) //reduce CPU usage due to infinite nonblocking loop
-	}
-}*/
-
 func (http2Handler *Http2Handler) processHttp2Stream(local *tls.Conn, remote *tls.Conn, ctx *goproxy.ProxyCtx) {
 	const preface = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 	b := make([]byte, len(preface))
@@ -71,11 +57,7 @@ func (http2Handler *Http2Handler) processHttp2Stream(local *tls.Conn, remote *tl
 	directFramer := http2.NewFramer(remote, local)
 	reverseFramer := http2.NewFramer(local, remote)
 
-	//	defer remote.Close()
-	//	defer local.Close()
 	go func() {
-		//		defer remote.Close()
-		//	defer local.Close()
 		for {
 			if !http2Handler.readFrame(directFramer, reverseFramer, ctx, true) {
 				return
@@ -84,7 +66,7 @@ func (http2Handler *Http2Handler) processHttp2Stream(local *tls.Conn, remote *tl
 	}()
 	for {
 		if !http2Handler.readFrame(reverseFramer, directFramer, ctx, false) {
-			return
+			break
 		}
 	}
 }
@@ -152,7 +134,7 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 				end := i + chunkSize
 				streamEnd := false
 				if end > len(dataToSend) {
-					end = len(dataToSend) - 1
+					end = len(dataToSend)
 					streamEnd = true
 				}
 
@@ -163,7 +145,7 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 	case http2.FrameHeaders:
 		fr := f.(*http2.HeadersFrame)
 
-		decoder := hpack.NewDecoder(204800, nil)
+		decoder := hpack.NewDecoder(0, nil)
 		headerBlock := fr.HeaderBlockFragment()
 		hf, err := decoder.DecodeFull(headerBlock)
 		if err != nil {
@@ -174,6 +156,7 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 		for _, h := range hf {
 			lastHeader[h.Name] = h.Value
 		}
+
 		if client && len(lastHeader) > 0 {
 			request := makeHttpRequest(nil, lastHeader)
 			http2Handler.lastHttpRequest[f.Header().StreamID] = request
