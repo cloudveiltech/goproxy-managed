@@ -85,7 +85,7 @@ func SetProxyLogFile(logFile string) {
 func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 	loadAndSetCa(certFile, keyFile)
 	proxy = goproxy.NewProxyHttpServer()
-	proxy.Verbose = true
+	proxy.Verbose = false
 	proxy.Http2Handler = serveHttp2Filtering
 
 	if proxy.Verbose {

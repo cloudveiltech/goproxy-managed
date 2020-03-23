@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cloudveiltech/goproxy"
 
@@ -54,20 +55,28 @@ func (http2Handler *Http2Handler) processHttp2Stream(local *tls.Conn, remote *tl
 	}
 	remote.Write(b)
 
+	http2.VerboseLogs = false
 	directFramer := http2.NewFramer(remote, local)
 	reverseFramer := http2.NewFramer(local, remote)
 
+	defer remote.Close()
+	defer local.Close()
 	go func() {
+		decoder := hpack.NewDecoder(1000000, nil)
 		for {
-			if !http2Handler.readFrame(directFramer, reverseFramer, ctx, true) {
+			if !http2Handler.readFrame(directFramer, reverseFramer, ctx, decoder, true) {
 				return
 			}
+
+			time.Sleep(time.Millisecond * 10)
 		}
 	}()
 	for {
-		if !http2Handler.readFrame(reverseFramer, directFramer, ctx, false) {
-			break
+		decoder := hpack.NewDecoder(1000000, nil)
+		if !http2Handler.readFrame(reverseFramer, directFramer, ctx, decoder, false) {
+			return
 		}
+		time.Sleep(time.Millisecond * 10)
 	}
 }
 
@@ -76,7 +85,7 @@ func isContentTypeFilterable(contentType string) bool {
 		strings.Contains(contentType, "json")
 }
 
-func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.Framer, ctx *goproxy.ProxyCtx, client bool) bool {
+func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.Framer, ctx *goproxy.ProxyCtx, decoder *hpack.Decoder, client bool) bool {
 	f, err := directFramer.ReadFrame()
 	if err != nil {
 		log.Printf("ReadFrame client %v, err: %v", client, err)
@@ -145,7 +154,6 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 	case http2.FrameHeaders:
 		fr := f.(*http2.HeadersFrame)
 
-		decoder := hpack.NewDecoder(0, nil)
 		headerBlock := fr.HeaderBlockFragment()
 		hf, err := decoder.DecodeFull(headerBlock)
 		if err != nil {
@@ -155,6 +163,7 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 		lastHeader := make(map[string]string)
 		for _, h := range hf {
 			lastHeader[h.Name] = h.Value
+			//log.Printf("header %s: %s", h.Name, h.Value)
 		}
 
 		if client && len(lastHeader) > 0 {
