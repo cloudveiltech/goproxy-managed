@@ -165,7 +165,6 @@ func Start() {
 		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 			userData := make(map[string]interface{})
 			ctx.UserData = userData
-			userData["blocked"] = false
 
 			//dumpRequest(r)
 			request := r
@@ -175,8 +174,7 @@ func Start() {
 			defer removeSessionFromInteropMap(id)
 
 			if beforeRequestCallback != nil {
-				blocked := int32(C.FireCallback(beforeRequestCallback, C.longlong(id))) == 1
-				userData["blocked"] = blocked
+				C.FireCallback(beforeRequestCallback, C.longlong(id))
 
 				request = session.request
 				response = session.response
