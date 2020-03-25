@@ -47,7 +47,6 @@ func ResponseGetBody(id int64, res *[]byte) bool {
 	} else {
 		*res = decodeResponseCompression(response.Header.Get("Content-Encoding"), result)
 		if *res == nil {
-			log.Print("Decoded nil response")
 			*res = result
 		}
 	}
@@ -101,7 +100,6 @@ func readReader(reader io.ReadCloser, err error) []byte {
 		body, _ := ioutil.ReadAll(reader)
 		return body
 	}
-	log.Printf("Reader errror %v", err)
 	return nil
 }
 
@@ -208,6 +206,7 @@ func ResponseGetCertificate(id int64, index int32, certData *[]byte) int {
 func CreateResponse(id int64, status int32, contentType string, body string) bool {
 	session, exists := sessionMap[id]
 	if !exists {
+		log.Printf("NO SESSION FOR RESPONSE %d", id)
 		return false
 	}
 

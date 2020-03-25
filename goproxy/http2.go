@@ -10,38 +10,39 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/cloudveiltech/goproxy"
-
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
 )
+
+var http2ProxySessionCounter int64
 
 type Http2Handler struct {
 	lastHttpResponse map[uint32]*http.Response
 	lastHttpRequest  map[uint32]*http.Request
 	lastHeadersBlock map[uint32]*http2.HeadersFrameParam
-	data             map[uint32]*bytes.Buffer
+	proxyCtx         map[uint32]*goproxy.ProxyCtx
 }
 
 func serveHttp2Filtering(r *http.Request, rawClientTls *tls.Conn, remote *tls.Conn) bool {
 	log.Print("Running http2 handler for " + r.URL.String())
-	ctx := &goproxy.ProxyCtx{Req: r, Session: 1}
 
 	http2Handler := &Http2Handler{
 		lastHttpResponse: make(map[uint32]*http.Response),
 		lastHeadersBlock: make(map[uint32]*http2.HeadersFrameParam),
 		lastHttpRequest:  make(map[uint32]*http.Request),
-		data:             make(map[uint32]*bytes.Buffer),
+		proxyCtx:         make(map[uint32]*goproxy.ProxyCtx),
 	}
 	go func() {
-		http2Handler.processHttp2Stream(rawClientTls, remote, ctx)
+		http2Handler.processHttp2Stream(rawClientTls, remote)
 	}()
 
 	return true
 }
 
-func (http2Handler *Http2Handler) processHttp2Stream(local *tls.Conn, remote *tls.Conn, ctx *goproxy.ProxyCtx) {
+func (http2Handler *Http2Handler) processHttp2Stream(local *tls.Conn, remote *tls.Conn) {
 	const preface = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 	b := make([]byte, len(preface))
 	if _, err := io.ReadFull(local, b); err != nil {
@@ -58,12 +59,12 @@ func (http2Handler *Http2Handler) processHttp2Stream(local *tls.Conn, remote *tl
 	directFramer := http2.NewFramer(remote, local)
 	reverseFramer := http2.NewFramer(local, remote)
 
-	//	defer remote.Close()
-	//defer local.Close()
 	go func() {
+		defer remote.Close()
+		defer local.Close()
 		decoder := hpack.NewDecoder(400096, nil)
 		for {
-			if !http2Handler.readFrame(reverseFramer, directFramer, ctx, decoder, false) {
+			if !http2Handler.readFrame(reverseFramer, directFramer, decoder, false) {
 				return
 			}
 		}
@@ -71,7 +72,7 @@ func (http2Handler *Http2Handler) processHttp2Stream(local *tls.Conn, remote *tl
 
 	decoder := hpack.NewDecoder(400096, nil)
 	for {
-		if !http2Handler.readFrame(directFramer, reverseFramer, ctx, decoder, true) {
+		if !http2Handler.readFrame(directFramer, reverseFramer, decoder, true) {
 			return
 		}
 	}
@@ -82,7 +83,7 @@ func isContentTypeFilterable(contentType string) bool {
 		strings.Contains(contentType, "json")
 }
 
-func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.Framer, ctx *goproxy.ProxyCtx, decoder *hpack.Decoder, client bool) bool {
+func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.Framer, decoder *hpack.Decoder, client bool) bool {
 	f, err := directFramer.ReadFrame()
 	if err != nil {
 		log.Printf("ReadFrame client %v, err: %v", client, err)
@@ -93,19 +94,13 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 	case http2.FrameData:
 		fr := f.(*http2.DataFrame)
 		body := fr.Data()
-		bodyBuf, ok := http2Handler.data[f.Header().StreamID]
-		if !ok {
-			bodyBuf = new(bytes.Buffer)
-			http2Handler.data[f.Header().StreamID] = bodyBuf
-		}
-		bodyBuf.Write(body)
 
 		lastHttpResponse := http2Handler.lastHttpResponse[f.Header().StreamID]
 		if lastHttpResponse != nil && !client {
 			contentType := lastHttpResponse.Header.Get("Content-Type")
 			if isContentTypeFilterable(contentType) {
-				body := bodyBuf.Bytes()
 				putResponseBody(body, lastHttpResponse)
+				ctx := http2Handler.proxyCtx[f.Header().StreamID]
 				resp := proxy.FilterResponse(lastHttpResponse, ctx)
 
 				if resp != lastHttpResponse { //new response
@@ -121,12 +116,10 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 					buf.ReadFrom(resp.Body)
 					directFramer.WriteData(f.Header().StreamID, true, buf.Bytes())
 					directFramer.WriteGoAway(f.Header().StreamID, http2.ErrCodeCancel, nil)
-
-					delete(http2Handler.data, f.Header().StreamID)
+					//	delete(http2Handler.lastHttpResponse, f.Header().StreamID)
+					//	delete(http2Handler.lastHttpRequest, f.Header().StreamID)
 					return false
 				}
-
-				delete(http2Handler.lastHttpResponse, f.Header().StreamID)
 			}
 		}
 
@@ -136,24 +129,8 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 			writeHeaders(directFramer, header)
 			delete(http2Handler.lastHeadersBlock, f.Header().StreamID)
 		}
-		if fr.StreamEnded() {
-			dataToSend := bodyBuf.Bytes()
-			chunkSize := 15 * 1024
-			for i := 0; i < len(dataToSend); i += chunkSize {
-				end := i + chunkSize
-				streamEnd := false
-				if end > len(dataToSend) {
-					end = len(dataToSend)
-					streamEnd = true
-				}
 
-				directFramer.WriteData(f.Header().StreamID, streamEnd, dataToSend[i:end])
-			}
-
-			delete(http2Handler.data, f.Header().StreamID)
-			delete(http2Handler.lastHttpResponse, f.Header().StreamID)
-			delete(http2Handler.lastHttpRequest, f.Header().StreamID)
-		}
+		directFramer.WriteData(f.Header().StreamID, fr.StreamEnded(), body)
 	case http2.FrameHeaders:
 		fr := f.(*http2.HeadersFrame)
 		decoder.SetMaxStringLength(16 << 20)
@@ -163,9 +140,13 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 		}
 		if client {
 			request := makeHttpRequest(nil, headerFields)
+			var ctx = &goproxy.ProxyCtx{Req: request, Session: atomic.AddInt64(&http2ProxySessionCounter, 1)}
 			http2Handler.lastHttpRequest[f.Header().StreamID] = request
+			http2Handler.proxyCtx[f.Header().StreamID] = ctx
 			_, resp := proxy.FilterRequest(request, ctx)
+			log.Printf("FILTERING Request %s", request.RequestURI)
 			if resp != nil {
+				log.Printf("FILTERING Request blocked %s", request.RequestURI)
 				writeHeaders(reverseFramer, &http2.HeadersFrameParam{
 					StreamID:      f.Header().StreamID,
 					BlockFragment: encodeHeaders(resp),
