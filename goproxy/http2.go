@@ -24,6 +24,7 @@ type Http2Handler struct {
 	lastHttpRequest  map[uint32]*http.Request
 	lastHeadersBlock map[uint32]*http2.HeadersFrameParam
 	proxyCtx         map[uint32]*goproxy.ProxyCtx
+	lastHeadersMap   map[uint32][]hpack.HeaderField
 }
 
 func serveHttp2Filtering(r *http.Request, rawClientTls *tls.Conn, remote *tls.Conn) bool {
@@ -32,6 +33,7 @@ func serveHttp2Filtering(r *http.Request, rawClientTls *tls.Conn, remote *tls.Co
 	http2Handler := &Http2Handler{
 		lastHttpResponse: make(map[uint32]*http.Response),
 		lastHeadersBlock: make(map[uint32]*http2.HeadersFrameParam),
+		lastHeadersMap:   make(map[uint32][]hpack.HeaderField),
 		lastHttpRequest:  make(map[uint32]*http.Request),
 		proxyCtx:         make(map[uint32]*goproxy.ProxyCtx),
 	}
@@ -111,7 +113,7 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 						EndHeaders:    true,
 						PadLength:     0,
 						Priority:      http2.PriorityParam{},
-					})
+					}, decoder)
 					buf := new(bytes.Buffer)
 					buf.ReadFrom(resp.Body)
 					directFramer.WriteData(f.Header().StreamID, true, buf.Bytes())
@@ -125,15 +127,18 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 
 		header, ok := http2Handler.lastHeadersBlock[f.Header().StreamID]
 		if ok {
+			headerFields, _ := http2Handler.lastHeadersMap[f.Header().StreamID]
 			header.EndStream = false
-			writeHeaders(directFramer, header)
+			header.BlockFragment = encodeHeaderFields(headerFields)
+			writeHeaders(directFramer, header, decoder)
 			delete(http2Handler.lastHeadersBlock, f.Header().StreamID)
+			delete(http2Handler.lastHeadersMap, f.Header().StreamID)
 		}
 
 		directFramer.WriteData(f.Header().StreamID, fr.StreamEnded(), body)
 	case http2.FrameHeaders:
 		fr := f.(*http2.HeadersFrame)
-		decoder.SetMaxStringLength(16 << 20)
+
 		headerFields, headerBlock := decodeAllHeaders(directFramer, fr, decoder)
 		if len(headerFields) == 0 {
 			log.Printf("Error parsing headers")
@@ -144,9 +149,7 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 			http2Handler.lastHttpRequest[f.Header().StreamID] = request
 			http2Handler.proxyCtx[f.Header().StreamID] = ctx
 			_, resp := proxy.FilterRequest(request, ctx)
-			log.Printf("FILTERING Request %s", request.RequestURI)
 			if resp != nil {
-				log.Printf("FILTERING Request blocked %s", request.RequestURI)
 				writeHeaders(reverseFramer, &http2.HeadersFrameParam{
 					StreamID:      f.Header().StreamID,
 					BlockFragment: encodeHeaders(resp),
@@ -154,7 +157,7 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 					EndHeaders:    true,
 					PadLength:     0,
 					Priority:      fr.Priority,
-				})
+				}, decoder)
 				buf := new(bytes.Buffer)
 				buf.ReadFrom(resp.Body)
 				reverseFramer.WriteData(f.Header().StreamID, true, buf.Bytes())
@@ -176,8 +179,9 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 		}
 
 		if client || fr.StreamEnded() {
-			writeHeaders(directFramer, &header)
+			writeHeaders(directFramer, &header, decoder)
 		} else {
+			http2Handler.lastHeadersMap[f.Header().StreamID] = headerFields
 			http2Handler.lastHeadersBlock[f.Header().StreamID] = &header
 		}
 	case http2.FramePriority:
@@ -239,11 +243,11 @@ func decodeAllHeaders(framer *http2.Framer, fr *http2.HeadersFrame, decoder *hpa
 	defer decoder.SetEmitFunc(func(hf hpack.HeaderField) {})
 	defer decoder.Close()
 
+	buf.Write(fr.HeaderBlockFragment())
 	_, err := decoder.Write(fr.HeaderBlockFragment())
 	if err != nil {
 		log.Printf("Error decode %v", err)
 	}
-	buf.Write(fr.HeaderBlockFragment())
 	if fr.HeadersEnded() {
 		return res, buf.Bytes()
 	}
@@ -252,8 +256,8 @@ func decodeAllHeaders(framer *http2.Framer, fr *http2.HeadersFrame, decoder *hpa
 			break
 		} else {
 			continuationFrame := f.(*http2.ContinuationFrame) // guaranteed by checkFrameOrder
-			decoder.Write(continuationFrame.HeaderBlockFragment())
-			_, err = buf.Write(continuationFrame.HeaderBlockFragment())
+			buf.Write(continuationFrame.HeaderBlockFragment())
+			_, err = decoder.Write(continuationFrame.HeaderBlockFragment())
 			if err != nil {
 				log.Printf("Error decode %v", err)
 			}
@@ -265,7 +269,7 @@ func decodeAllHeaders(framer *http2.Framer, fr *http2.HeadersFrame, decoder *hpa
 	return res, buf.Bytes()
 }
 
-func writeHeaders(framer *http2.Framer, param *http2.HeadersFrameParam) {
+func writeHeaders(framer *http2.Framer, param *http2.HeadersFrameParam, decoder *hpack.Decoder) {
 	dataToSend := param.BlockFragment
 	chunkSize := 15 * 1024
 	for i := 0; i < len(dataToSend); i += chunkSize {
@@ -277,6 +281,18 @@ func writeHeaders(framer *http2.Framer, param *http2.HeadersFrameParam) {
 		}
 
 		if i == 0 {
+			/*	decoder.SetEmitEnabled(true)
+				decoder.SetMaxStringLength(16 << 20)
+				decoder.SetEmitFunc(func(hf hpack.HeaderField) {
+					if len(hf.Name) > 0 {
+						log.Printf("Writing header id:%d, %s:%s", param.StreamID, hf.Name, hf.Value)
+					}
+				})
+				defer decoder.SetEmitFunc(func(hf hpack.HeaderField) {})
+				defer decoder.Close()
+
+				decoder.Write(dataToSend[i:end])*/
+
 			framer.WriteHeaders(http2.HeadersFrameParam{
 				StreamID:      param.StreamID,
 				BlockFragment: dataToSend[i:end],
@@ -361,14 +377,14 @@ func putResponseBody(body []byte, resp *http.Response) {
 	}
 }
 
-func encodeHeadersMetaFrame(fr *http2.MetaHeadersFrame) []byte {
+func encodeHeaderFields(fields []hpack.HeaderField) []byte {
 	buf := new(bytes.Buffer)
 	encoder := hpack.NewEncoder(buf)
 	encoder.SetMaxDynamicTableSize(4096)
 	buf.Reset()
 
-	for i := 0; i < len(fr.Fields); i++ {
-		encoder.WriteField(fr.Fields[i])
+	for i := 0; i < len(fields); i++ {
+		encoder.WriteField(fields[i])
 	}
 	return buf.Bytes()
 }

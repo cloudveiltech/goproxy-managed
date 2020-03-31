@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"io/ioutil"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/cloudveiltech/goproxy"
@@ -55,9 +56,11 @@ func setCA(caCert, caKey []byte) error {
 }
 
 func verifyCerts(dnsName string, peerCerts []*x509.Certificate) (bool, error) {
+	dnsNamePatched := strings.Split(dnsName, ":")[0]
+
 	opts := x509.VerifyOptions{
 		Roots:         nil,
-		DNSName:       dnsName,
+		DNSName:       dnsNamePatched,
 		Intermediates: x509.NewCertPool(),
 		CurrentTime:   time.Now(),
 	}
@@ -73,6 +76,7 @@ func verifyCerts(dnsName string, peerCerts []*x509.Certificate) (bool, error) {
 	var err error
 	_, err = peerCerts[0].Verify(opts)
 	if err != nil {
+		log.Printf("Verify certs error %v", err)
 		return false, err
 	}
 
