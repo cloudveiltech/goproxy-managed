@@ -4,13 +4,17 @@ import (
 	"compress/gzip"
 	"encoding/gob"
 	"log"
+	"net/url"
 	"os"
 	"runtime/debug"
 	"strings"
 
 	"github.com/patriciy/adblock/adblock"
 
+	"encoding/base64"
+
 	goahocorasick "github.com/anknown/ahocorasick"
+	"github.com/aymerick/raymond"
 	lru "github.com/hashicorp/golang-lru"
 )
 
@@ -23,12 +27,13 @@ const MAX_RULES_PER_MATCHER = 1000
 const MAX_CONTENT_SIZE_SCAN = 1000 * 1024 //500kb max to scan
 var adBlockMatcher *AdBlockMatcher
 
-var defaultBlockPageContent = "%url% is blocked. Category %category%. Reason %reason%"
+var defaultBlockPageContent = "{{url_text}} is blocked. Category {{matching_category}}. Reason {{message}}"
 var lruCache, _ = lru.New(1024)
 
 type cacheItem struct {
-	category  *string
-	matchType int
+	category        *string
+	matchType       int
+	isRelaxedPolicy bool
 }
 
 type MatcherCategory struct {
@@ -52,13 +57,15 @@ type AdBlockMatcher struct {
 	RulesCnt                int
 	phrasesCount            int
 	bypassEnabled           bool
-	BlockPageContent        string
+	BlockPageTemplate       *raymond.Template
+	BlockCertTemplate       *raymond.Template
+	defaultBlockPageTags    map[string]string
 }
 
 func CreateMatcher() *AdBlockMatcher {
 	adBlockMatcher = &AdBlockMatcher{
-		RulesCnt:         0,
-		BlockPageContent: defaultBlockPageContent,
+		RulesCnt:             0,
+		defaultBlockPageTags: make(map[string]string),
 	}
 
 	return adBlockMatcher
@@ -92,16 +99,56 @@ func (am *AdBlockMatcher) addMatcher(category string, bypass bool) {
 	adBlockMatcher.lastCategory = categoryMatcher
 }
 
-func (am *AdBlockMatcher) GetBlockPage(url string, category string, reason string) string {
-	tagsReplacer := strings.NewReplacer("%url%", url,
-		"%category%", category,
-		"%reason%", reason)
-	return tagsReplacer.Replace(am.BlockPageContent)
+func (am *AdBlockMatcher) GetBlockPage(blockedUrl, category string, isRelaxedPolicy, isTriggerBlocked bool) string {
+	tags := am.defaultBlockPageTags
+
+	tags["url_text"] = blockedUrl
+	tags["friendly_url_text"] = blockedUrl
+	tags["message"] = ""
+	tags["matching_category"] = category
+	if isRelaxedPolicy {
+		tags["isRelaxedPolicy"] = "1"
+	} else {
+		tags["isRelaxedPolicy"] = ""
+	}
+
+	if isTriggerBlocked {
+		tags["showUnblockRequestButton"] = ""
+	} else {
+		tags["showUnblockRequestButton"] = "1"
+	}
+
+	tags["unblockRequest"] = tags["unblockRequestBase"] + "&category_name=" + url.QueryEscape(category) + "&blocked_request=" + base64.StdEncoding.EncodeToString([]byte(blockedUrl))
+
+	res, err := am.BlockPageTemplate.Exec(tags)
+	if err != nil {
+		log.Printf("Error render block block page %v", err)
+		return "Blocked default page"
+	}
+	return res
 }
 
-func (am *AdBlockMatcher) TestUrlBlocked(url string, host string, referer string) (*string, int) {
+func (am *AdBlockMatcher) GetBadCertPage(url, category, host, certThumbPrint string) string {
+	tags := am.defaultBlockPageTags
+	tags["url_text"] = url
+	tags["friendly_url_text"] = url
+	tags["certThumbprintExists"] = certThumbPrint
+	tags["host"] = host
+
+	if am.BlockCertTemplate == nil {
+		return "Blocked cert default page"
+	}
+	res, err := am.BlockCertTemplate.Exec(tags)
+	if err != nil {
+		log.Printf("Error render block cert page %v", err)
+		return "Blocked cert default page"
+	}
+	return res
+}
+
+func (am *AdBlockMatcher) TestUrlBlocked(url string, host string, referer string) (category *string, matchType int, isRelaxedPolicy bool) {
 	if am.RulesCnt == 0 {
-		return nil, Included
+		return nil, Included, false
 	}
 
 	cacheKey := url + host
@@ -109,25 +156,25 @@ func (am *AdBlockMatcher) TestUrlBlocked(url string, host string, referer string
 		item := v.(cacheItem)
 
 		log.Printf("Cache hit: %s %d", url, item.matchType)
-		return item.category, item.matchType
+		return item.category, item.matchType, item.isRelaxedPolicy
 	}
 	res1, res2 := am.matchRulesCategories(am.MatcherCategories, url, host, referer)
 	if res1 != nil {
-		lruCache.Add(cacheKey, cacheItem{category: res1, matchType: res2})
-		return res1, res2
+		lruCache.Add(cacheKey, cacheItem{category: res1, matchType: res2, isRelaxedPolicy: false})
+		return res1, res2, false
 	}
 
 	if am.bypassEnabled {
-		return nil, Included
+		return nil, Included, true
 	}
 
 	res1, res2 = am.matchRulesCategories(am.BypassMatcherCategories, url, host, referer)
 	if res1 != nil {
-		lruCache.Add(cacheKey, cacheItem{category: res1, matchType: res2})
+		lruCache.Add(cacheKey, cacheItem{category: res1, matchType: res2, isRelaxedPolicy: true})
 	}
 
-	lruCache.Add(cacheKey, cacheItem{category: nil, matchType: Included})
-	return res1, res2
+	lruCache.Add(cacheKey, cacheItem{category: nil, matchType: Included, isRelaxedPolicy: true})
+	return res1, res2, true
 }
 
 func (am *AdBlockMatcher) matchRulesCategories(matcherCategories []*MatcherCategory, url string, host string, referer string) (*string, int) {

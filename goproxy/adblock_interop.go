@@ -4,6 +4,7 @@ import "C"
 
 import (
 	"bufio"
+	"github.com/aymerick/raymond"
 	"io/ioutil"
 	"log"
 	"os"
@@ -64,20 +65,46 @@ func AdBlockMatcherParseRuleFile(fileNameC *C.char, categoryIdC *C.char, listTyp
 }
 
 //export AdBlockMatcherSetBlockedPageContent
-func AdBlockMatcherSetBlockedPageContent(contentC *C.char) {
-	blockPagePath := C.GoString(contentC)
-	fileHandle, err := os.Open(blockPagePath)
+func AdBlockMatcherSetBlockedPageContent(contentBlockPageC, contentCertPageC *C.char) {
+	blockPagePath := C.GoString(contentBlockPageC)
+	adBlockMatcher.BlockPageTemplate = parseTemplate(blockPagePath)
+
+	certPagePath := C.GoString(contentCertPageC)
+	adBlockMatcher.BlockCertTemplate = parseTemplate(certPagePath)
+}
+
+//export AdBlockMatcherSetBlockPageContextTag
+func AdBlockMatcherSetBlockPageContextTag(keyC, valueC *C.char) {
+	key := C.GoString(keyC)
+	value := C.GoString(valueC)
+
+	if len(value) > 0 {
+		adBlockMatcher.defaultBlockPageTags[key] = value
+	} else {
+		delete(adBlockMatcher.defaultBlockPageTags, key)
+	}
+}
+
+func parseTemplate(pagePath string) *raymond.Template {
+	fileHandle, err := os.Open(pagePath)
 	if err != nil {
 		log.Printf("Error reading block page %s", err)
-		return
+		return nil
 	}
 	defer fileHandle.Close()
 	content, e := ioutil.ReadAll(fileHandle)
 	if e != nil {
 		log.Printf("Error reading block page %s", e)
-		return
+		return nil
 	}
-	adBlockMatcher.BlockPageContent = string(content)
+
+	pageString := string(content)
+	template, err := raymond.Parse(pageString)
+	if err != nil {
+		log.Printf("Error parsing template %s, %v", pagePath, err)
+		return nil
+	}
+	return template
 }
 
 //export AdBlockMatcherSave
@@ -92,12 +119,16 @@ func AdBlockMatcherLoad(fileName string) {
 
 //export AdBlockMatcherEnableBypass
 func AdBlockMatcherEnableBypass() {
-	adBlockMatcher.bypassEnabled = true
+	if adBlockMatcher != nil {
+		adBlockMatcher.bypassEnabled = true
+	}
 }
 
 //export AdBlockMatcherDisableBypass
 func AdBlockMatcherDisableBypass() {
-	adBlockMatcher.bypassEnabled = false
+	if adBlockMatcher != nil {
+		adBlockMatcher.bypassEnabled = false
+	}
 }
 
 //export AdBlockMatcherGetBypassEnabled

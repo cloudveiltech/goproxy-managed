@@ -7,6 +7,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/aymerick/raymond"
 	"github.com/patriciy/adblock/adblock"
 )
 
@@ -96,7 +97,8 @@ func (am *AdBlockMatcher) addBlockPageFromZipFile(file *zip.File) {
 	if e != nil {
 		log.Printf("Error reading block page %s %s", e, file.Name)
 	}
-	am.BlockPageContent = string(content)
+	blockPageContent := string(content)
+	am.BlockPageTemplate, _ = raymond.Parse(blockPageContent)
 }
 
 func (am *AdBlockMatcher) addRulesFromScanner(scanner *bufio.Scanner, categoryName string, whitelist bool, bypass bool) {
