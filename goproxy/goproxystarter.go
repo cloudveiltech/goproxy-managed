@@ -14,28 +14,36 @@ static inline int FireAdblockCallback(void* ptr, char* url, char* category)
 import "C"
 
 import (
+	"encoding/binary"
 	"bufio"
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 	"unsafe"
 
-	"github.com/elazarl/goproxy"
+	"github.com/cloudveiltech/goproxy"
 	"github.com/inconshreveable/go-vhost"
 )
 
 //import _ "net/http/pprof"
 
 var (
-	proxy  *goproxy.ProxyHttpServer
-	server *http.Server
+	proxy               *goproxy.ProxyHttpServer
+	server              *http.Server
+	configuredPortHttp  int16
+	configuredPortHttps int16
 )
+
+const DEFAULT_HTTPS_PORT uint16 = 443
+
 
 func initGoProxy() {
 	proxy = goproxy.NewProxyHttpServer()
@@ -83,12 +91,14 @@ func (dumb dumbResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return dumb, bufio.NewReadWriter(bufio.NewReader(dumb), bufio.NewWriter(dumb)), nil
 }
 
-func runHttpsListener(port int16) {
+func runHttpsListener() {
+	log.Printf("runHttpsListener() %d", configuredPortHttps)
+
 	// listen to the TLS ClientHello but make it a CONNECT request instead
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", configuredPortHttps))
 
 	if err != nil {
-		log.Printf("Error listening for https connections - %v", err)
+		log.Fatalf("Error listening for https connections - %v", err)
 		return
 	}
 
@@ -100,38 +110,50 @@ func runHttpsListener(port int16) {
 		}
 
 		go func(c net.Conn) {
+			helloBuffer := make([]byte, 2) 
+			n, err := c.Read(helloBuffer)
+
+			port := DEFAULT_HTTPS_PORT
+			if n > 0 {
+				port = binary.BigEndian.Uint16([]byte{ helloBuffer[1], helloBuffer[0] })
+				log.Printf("Reading dest port for %d", port)
+
+			}
+
 			tlsConn, err := vhost.TLS(c)
 			if err != nil {
-				log.Printf("Error accepting new connection - %v", err)
-			}
-			if tlsConn.Host() == "" {
-				log.Printf("Cannot support non-SNI enabled clients")
+				log.Printf("Assuming plain http connection - %v", err)
+				chainReqToHttp(tlsConn)
 				return
 			}
 
-			if proxy.Verbose {
-				log.Printf("Https handler called for %s", tlsConn.Host())
+			host := tlsConn.Host()
+			if host == "" {
+				log.Printf("Cannot support client")
+				return
 			}
 
+			host = net.JoinHostPort(host, strconv.Itoa(int(port)))
+			resp := dumbResponseWriter{tlsConn}
 			connectReq := &http.Request{
 				Method: "CONNECT",
 				URL: &url.URL{
-					Opaque: tlsConn.Host(),
-					Host:   net.JoinHostPort(tlsConn.Host(), "443"),
+					Opaque: host,
+					Host:   host,
 				},
-				Host:   tlsConn.Host(),
+				Host:   host,
 				Header: make(http.Header),
 			}
 
-			resp := dumbResponseWriter{tlsConn}
 			proxy.ServeHTTP(resp, connectReq)
 		}(c)
 	}
 }
 
 func startHttpServer(port int16) *http.Server {
-	srv := &http.Server{Addr: fmt.Sprintf(":%d", port)}
+	srv := &http.Server{Addr: fmt.Sprintf("127.0.0.1:%d", port)}
 	srv.Handler = proxy
+	proxy.Http2Handler = serveHttp2Filtering
 
 	// go func() {
 	// 	http.ListenAndServe(":6060", nil)
@@ -151,6 +173,8 @@ func startHttpServer(port int16) *http.Server {
 func startGoProxyServer(portHttp, portHttps int16, certPath, certKeyPath string) {
 	initGoProxy()
 	loadAndSetCa(certPath, certKeyPath)
+	configuredPortHttp = portHttp
+	configuredPortHttps = portHttps
 
 	if proxy == nil {
 		return
@@ -223,10 +247,49 @@ func startGoProxyServer(portHttp, portHttps int16, certPath, certKeyPath string)
 			return resp
 		})
 
-	go runHttpsListener(portHttps)
+	go runHttpsListener()
 
 	if proxy.Verbose {
 		log.Printf("Server started")
+	}
+}
+
+func chainReqToHttp(client net.Conn) {
+	remote, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", configuredPortHttp))
+	if err != nil {
+		log.Printf("chainReqToHttp error connect %s", err)
+		return
+	}
+
+	defer remote.Close()
+	defer client.Close()
+
+	go func() {
+		for {
+			n, err := io.Copy(remote, client)
+			if err != nil {
+				log.Printf("error request %s", err)
+				return
+			}
+			if n == 0 {
+				log.Printf("nothing requested close")
+				return
+			}
+			time.Sleep(time.Millisecond) //reduce CPU usage due to infinite nonblocking loop
+		}
+	}()
+
+	for {
+		n, err := io.Copy(client, remote)
+		if err != nil {
+			log.Printf("error response %s", err)
+			return
+		}
+		if n == 0 {
+			log.Printf("nothing responded close")
+			return
+		}
+		time.Sleep(time.Millisecond) //reduce CPU usage due to infinite nonblocking loop
 	}
 }
 

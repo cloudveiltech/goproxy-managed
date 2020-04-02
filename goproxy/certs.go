@@ -16,7 +16,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/elazarl/goproxy"
+	"github.com/cloudveiltech/goproxy"
 )
 
 var defaultTLSConfig = &tls.Config{
