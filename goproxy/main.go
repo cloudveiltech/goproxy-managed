@@ -17,6 +17,22 @@ const (
 	ERROR_CERTS_GENERATION = -2
 )
 
+var certsException = make(map[string]bool)
+
+//export AddCertException
+func AddCertException(thumbPrintC *C.char) {
+	thumbPrint := C.GoString(thumbPrintC)
+	_, ok := certsException[thumbPrint] 
+	if !ok {
+		certsException[thumbPrint] = true
+	}
+}
+
+func isCertInException(thumbPrint string) bool {
+	_, ok := certsException[thumbPrint]
+	return ok
+}
+
 func checkPortAvailable(port int16) bool {
 	l, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	defer l.Close()
@@ -45,7 +61,7 @@ func AdBlockMatcherSetBlacklistCallback(callback unsafe.Pointer) {
 }
 
 //export StartGoServer
-func StartGoServer(portHttp int16, portHttps int16, certFileC *C.char, keyFileC *C.char) int16 {
+func StartGoServer(portHttp, portHttps, portConfigurationServer int16, certFileC *C.char, keyFileC *C.char) int16 {
 	debug.SetTraceback("all")
 	debug.SetPanicOnFault(true)
 
@@ -63,7 +79,7 @@ func StartGoServer(portHttp int16, portHttps int16, certFileC *C.char, keyFileC 
 		}
 	}
 
-	startGoProxyServer(portHttp, portHttps, certFile, keyFile)
+	startGoProxyServer(portHttp, portHttps, portConfigurationServer, certFile, keyFile)
 	return SUCCESS
 }
 
@@ -78,7 +94,7 @@ func main() {
 
 func test() {
 	log.Printf("main: starting HTTP server")
-	startGoProxyServer(14500, 14501, "rootCertificate.pem", "rootPrivateKey.pem")
+	startGoProxyServer(14500, 14501, 14502, "rootCertificate.pem", "rootPrivateKey.pem")
 
 	log.Printf("main: serving for 1000 seconds")
 

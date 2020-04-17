@@ -14,10 +14,10 @@ static inline int FireAdblockCallback(void* ptr, char* url, char* category)
 import "C"
 
 import (
-	"encoding/binary"
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"time"
 	"unsafe"
+	"encoding/base64"
 
 	"github.com/cloudveiltech/goproxy"
 	"github.com/inconshreveable/go-vhost"
@@ -40,10 +41,10 @@ var (
 	server              *http.Server
 	configuredPortHttp  int16
 	configuredPortHttps int16
+	configuredConfigurationServerPort int16
 )
 
 const DEFAULT_HTTPS_PORT uint16 = 443
-
 
 func initGoProxy() {
 	proxy = goproxy.NewProxyHttpServer()
@@ -110,12 +111,12 @@ func runHttpsListener() {
 		}
 
 		go func(c net.Conn) {
-			helloBuffer := make([]byte, 2) 
+			helloBuffer := make([]byte, 2)
 			n, err := c.Read(helloBuffer)
 
 			port := DEFAULT_HTTPS_PORT
 			if n > 0 {
-				port = binary.BigEndian.Uint16([]byte{ helloBuffer[1], helloBuffer[0] })
+				port = binary.BigEndian.Uint16([]byte{helloBuffer[1], helloBuffer[0]})
 				log.Printf("Reading dest port for %d", port)
 
 			}
@@ -170,11 +171,12 @@ func startHttpServer(port int16) *http.Server {
 	return srv
 }
 
-func startGoProxyServer(portHttp, portHttps int16, certPath, certKeyPath string) {
+func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, certPath, certKeyPath string) {
 	initGoProxy()
 	loadAndSetCa(certPath, certKeyPath)
 	configuredPortHttp = portHttp
 	configuredPortHttps = portHttps
+	configuredConfigurationServerPort = portConfigurationServer
 
 	if proxy == nil {
 		return
@@ -222,6 +224,19 @@ func startGoProxyServer(portHttp, portHttps int16, certPath, certKeyPath string)
 				return resp
 			}
 
+			if resp.TLS != nil {
+				var err error
+				_, err = verifyCerts(ctx.Req.URL.Host, resp.TLS.PeerCertificates)
+				if err != nil {
+					certThumbPrint := base64.StdEncoding.EncodeToString(resp.TLS.PeerCertificates[0].Signature)
+
+					if !isCertInException(certThumbPrint) {
+						message := adBlockMatcher.GetBadCertPage(ctx.Req.URL.Host, certThumbPrint)
+						return goproxy.NewResponse(resp.Request, goproxy.ContentTypeHtml, http.StatusForbidden, message)
+					}
+				}
+			}
+
 			if !adBlockMatcher.TestContentTypeIsFiltrable(resp.Header.Get("Content-Type")) {
 				return resp
 			}
@@ -247,6 +262,7 @@ func startGoProxyServer(portHttp, portHttps int16, certPath, certKeyPath string)
 			return resp
 		})
 
+	runConfigurationServerListener()
 	go runHttpsListener()
 
 	if proxy.Verbose {

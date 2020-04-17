@@ -128,11 +128,12 @@ func (am *AdBlockMatcher) GetBlockPage(blockedUrl, category string, isRelaxedPol
 	return res
 }
 
-func (am *AdBlockMatcher) GetBadCertPage(url, category, host, certThumbPrint string) string {
+func (am *AdBlockMatcher) GetBadCertPage(host, certThumbPrint string) string {
 	tags := am.defaultBlockPageTags
-	tags["url_text"] = url
-	tags["friendly_url_text"] = url
-	tags["certThumbprintExists"] = certThumbPrint
+	if len(certThumbPrint) > 0 {
+		tags["certThumbprintExists"] = "1"
+	}
+	tags["certThumbprint"] = certThumbPrint
 	tags["host"] = host
 
 	if am.BlockCertTemplate == nil {
