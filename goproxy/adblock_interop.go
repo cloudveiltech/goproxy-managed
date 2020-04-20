@@ -139,3 +139,13 @@ func AdBlockMatcherGetBypassEnabled() bool {
 		return false
 	}
 }
+
+//export AdBlockMatcherIsDomainWhitelisted
+func AdBlockMatcherIsDomainWhitelisted(hostC *C.char) bool {
+	if adBlockMatcher != nil {
+		host := C.GoString(hostC)
+		return adBlockMatcher.IsDomainWhitelisted(host)
+	} else {
+		return false
+	}
+}

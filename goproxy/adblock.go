@@ -147,6 +147,17 @@ func (am *AdBlockMatcher) GetBadCertPage(host, certThumbPrint string) string {
 	return res
 }
 
+func (am *AdBlockMatcher) IsDomainWhitelisted(host string) bool {
+	category, matchType, _ := am.TestUrlBlocked("https://"+host, host, "")
+	if category != nil && matchType == Excluded {
+		log.Printf("Testing early host - true %s", host)
+		return true
+	}
+
+	log.Printf("Testing early host - false %s", host)
+	return false
+}
+
 func (am *AdBlockMatcher) TestUrlBlocked(url string, host string, referer string) (category *string, matchType int, isRelaxedPolicy bool) {
 	if am.RulesCnt == 0 {
 		return nil, Included, false
