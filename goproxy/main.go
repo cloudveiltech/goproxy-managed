@@ -124,7 +124,7 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 }
 
 func startHttpServer() *http.Server {
-	srv := &http.Server{Addr: fmt.Sprintf(":%d", config.portHttp)}
+	srv := &http.Server{Addr: fmt.Sprintf("0.0.0.0:%d", config.portHttp)}
 	srv.Handler = proxy
 	go func() {
 		err := srv.ListenAndServe()
@@ -356,7 +356,9 @@ func runHttpsListener() {
 }
 
 func chainReqToHttp(client net.Conn) {
-	remote, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", config.portHttp))
+
+	log.Printf("chainReqToHttp addr %s", client.LocalAddr().(*net.TCPAddr).IP.String())
+	remote, err := net.Dial("tcp", fmt.Sprintf("%s:%d", client.LocalAddr().(*net.TCPAddr).IP.String(), config.portHttp))
 	if err != nil {
 		log.Printf("chainReqToHttp error connect %s", err)
 		return
@@ -392,6 +394,50 @@ func chainReqToHttp(client net.Conn) {
 		}
 		time.Sleep(time.Millisecond) //reduce CPU usage due to infinite nonblocking loop
 	}
+	/*
+		c := bufio.NewReader(client)
+		req, err := http.ReadRequest(c)
+		if req == nil || err != nil {
+			log.Printf("chainReqToHttp cannot read request of MITM HTTP client: %+#v", err)
+		}
+
+		writer := httpResponseWriter{client, req, make(http.Header), 0, false}
+		proxy.ServeHTTP(&writer, req)*/
+}
+
+type httpResponseWriter struct {
+	net.Conn
+	req         *http.Request
+	header      http.Header
+	status      int
+	headerWrote bool
+}
+
+func (h *httpResponseWriter) Header() http.Header {
+	//	panic("Header() should not be called on this ResponseWriter")
+
+	return h.header
+}
+
+func (h *httpResponseWriter) Write(buf []byte) (int, error) {
+	if !h.headerWrote {
+		h.WriteHeader(200)
+	}
+
+	h.Conn.Write([]byte(fmt.Sprintf("HTTP/1.1 %d %s\r\n", h.status, http.StatusText(h.status))))
+	h.header.Write(h.Conn)
+	h.Conn.Write([]byte("\r\n"))
+	return h.Conn.Write(buf)
+}
+
+func (h *httpResponseWriter) WriteHeader(code int) {
+	//	panic("WriteHeader() should not be called on this ResponseWriter")
+	h.status = code
+	h.headerWrote = true
+}
+
+func (h *httpResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return h, bufio.NewReadWriter(bufio.NewReader(h), bufio.NewWriter(h)), nil
 }
 
 type dumbResponseWriter struct {
@@ -400,6 +446,7 @@ type dumbResponseWriter struct {
 
 func (dumb dumbResponseWriter) Header() http.Header {
 	//	panic("Header() should not be called on this ResponseWriter")
+
 	return make(http.Header)
 }
 
@@ -407,11 +454,13 @@ func (dumb dumbResponseWriter) Write(buf []byte) (int, error) {
 	if bytes.Equal(buf, []byte("HTTP/1.0 200 OK\r\n\r\n")) {
 		return len(buf), nil // throw away the HTTP OK response from the faux CONNECT request
 	}
+
 	return dumb.Conn.Write(buf)
 }
 
 func (dumb dumbResponseWriter) WriteHeader(code int) {
 	//	panic("WriteHeader() should not be called on this ResponseWriter")
+
 }
 
 func (dumb dumbResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
