@@ -110,8 +110,10 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 		MaxIdleConns:        1000,
 		IdleConnTimeout:     time.Minute * 10,
 		TLSClientConfig: &tls.Config{
-			NextProtos:         []string{"http/1.1"},
-			InsecureSkipVerify: true,
+			NextProtos:               []string{"http/1.1"},
+			InsecureSkipVerify:       true,
+			CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+			PreferServerCipherSuites: true,
 		},
 	}
 	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
@@ -490,18 +492,28 @@ func main() {
 
 func test() {
 	log.Printf("main: starting HTTP server")
-	/*
+	
 		tlsConfig := &tls.Config{
-			NextProtos: []string{"h2"},
+			//	NextProtos:               []string{"h2", "http/1.1"},
+			//	MinVersion:               tls.VersionTLS12,
+			//CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+			PreferServerCipherSuites: true,
 		}
-		client := &http.Client{}
-		http2.ConfigureTransport(client)
-		resp, err := client.Get("https://app-ab09.marketo.com/index.php/form/getForm?munchkinId=711-AVJ-377&form=2548&url=https%3A%2F%2Fwww.qsc.com%2Fresources%2Fsoftware-and-firmware%2Fq-sys-designer-software%2Farchives%2F822%2F&callback=jQuery112401509716090828621_1583818664077&_=1583818664078")
+
+		//	proxyUrl, _ := url.Parse("http://127.0.0.1:8888")
+		client := &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: tlsConfig,
+				//			Proxy:           http.ProxyURL(proxyUrl),
+			},
+		}
+
+		resp, err := client.Get("https://www.digikey.com/product-detail/en/jst-sales-america-inc/SXH-001T-P0-6/455-1135-1-ND/527370")
 		if err != nil {
 			return
 		}
 		log.Printf("%d", resp.StatusCode)
-	*/
+
 	Init(14500, 14501, "rootCertificate.pem", "rootPrivateKey.pem")
 	Start()
 
