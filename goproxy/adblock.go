@@ -15,7 +15,6 @@ import (
 
 	goahocorasick "github.com/anknown/ahocorasick"
 	"github.com/aymerick/raymond"
-	lru "github.com/hashicorp/golang-lru"
 )
 
 const (
@@ -28,7 +27,6 @@ const MAX_CONTENT_SIZE_SCAN = 1000 * 1024 //500kb max to scan
 var adBlockMatcher *AdBlockMatcher
 
 var defaultBlockPageContent = "{{url_text}} is blocked. Category {{matching_category}}. Reason {{message}}"
-var lruCache, _ = lru.New(1024)
 
 type cacheItem struct {
 	category        *string
@@ -99,7 +97,7 @@ func (am *AdBlockMatcher) addMatcher(category string, bypass bool) {
 	adBlockMatcher.lastCategory = categoryMatcher
 }
 
-func (am *AdBlockMatcher) GetBlockPage(blockedUrl, category string, isRelaxedPolicy, isTriggerBlocked bool) string {
+func (am *AdBlockMatcher) GetBlockPage(blockedUrl, category string, isRelaxedPolicy bool) string {
 	tags := am.defaultBlockPageTags
 
 	tags["url_text"] = blockedUrl
@@ -111,12 +109,7 @@ func (am *AdBlockMatcher) GetBlockPage(blockedUrl, category string, isRelaxedPol
 	} else {
 		tags["isRelaxedPolicy"] = ""
 	}
-
-	if isTriggerBlocked {
-		tags["showUnblockRequestButton"] = ""
-	} else {
-		tags["showUnblockRequestButton"] = "1"
-	}
+	tags["showUnblockRequestButton"] = "1"
 
 	tags["unblockRequest"] = tags["unblockRequestBase"] + "&category_name=" + url.QueryEscape(category) + "&blocked_request=" + base64.StdEncoding.EncodeToString([]byte(blockedUrl))
 
@@ -128,11 +121,14 @@ func (am *AdBlockMatcher) GetBlockPage(blockedUrl, category string, isRelaxedPol
 	return res
 }
 
-func (am *AdBlockMatcher) GetBadCertPage(host, certThumbPrint string) string {
+func (am *AdBlockMatcher) GetBadCertPage(blockedUrl, host, certThumbPrint string) string {
 	tags := am.defaultBlockPageTags
 	if len(certThumbPrint) > 0 {
 		tags["certThumbprintExists"] = "1"
 	}
+
+	tags["url_text"] = blockedUrl
+	tags["friendly_url_text"] = blockedUrl
 	tags["certThumbprint"] = certThumbPrint
 	tags["host"] = host
 
@@ -163,16 +159,8 @@ func (am *AdBlockMatcher) TestUrlBlocked(url string, host string, referer string
 		return nil, Included, false
 	}
 
-	cacheKey := url + host
-	if v, ok := lruCache.Get(cacheKey); ok {
-		item := v.(cacheItem)
-
-		log.Printf("Cache hit: %s %d", url, item.matchType)
-		return item.category, item.matchType, item.isRelaxedPolicy
-	}
 	res1, res2 := am.matchRulesCategories(am.MatcherCategories, url, host, referer)
 	if res1 != nil {
-		lruCache.Add(cacheKey, cacheItem{category: res1, matchType: res2, isRelaxedPolicy: false})
 		return res1, res2, false
 	}
 
@@ -181,11 +169,7 @@ func (am *AdBlockMatcher) TestUrlBlocked(url string, host string, referer string
 	}
 
 	res1, res2 = am.matchRulesCategories(am.BypassMatcherCategories, url, host, referer)
-	if res1 != nil {
-		lruCache.Add(cacheKey, cacheItem{category: res1, matchType: res2, isRelaxedPolicy: true})
-	}
 
-	lruCache.Add(cacheKey, cacheItem{category: nil, matchType: Included, isRelaxedPolicy: true})
 	return res1, res2, true
 }
 
@@ -221,7 +205,6 @@ func (am *AdBlockMatcher) matchRulesCategories(matcherCategories []*MatcherCateg
 func matchDomain(domainParts []string, matcherCatergory *MatcherCategory) (bool, int) {
 	partsLen := len(domainParts)
 	if partsLen < 2 {
-		log.Printf("Domain too short")
 		return false, Included
 	}
 	domainName := domainParts[partsLen-1]
@@ -249,21 +232,26 @@ func (am *AdBlockMatcher) IsContentSmallEnoughToFilter(contentSize int64) bool {
 	return contentSize > 0 && contentSize < MAX_CONTENT_SIZE_SCAN
 }
 
-func (am *AdBlockMatcher) TestContainsForbiddenPhrases(str []byte) *string {
+func (am *AdBlockMatcher) TestContainsForbiddenPhrases(str []byte) (*string, []string) {
 	text := []rune(strings.ToLower(string(str)))
 
 	for _, phraseCategory := range am.PhraseCategories {
 		if phraseCategory.processor == nil {
+			log.Printf("Searching text trigger: nil")
 			continue
 		}
 
 		res := phraseCategory.processor.MultiPatternSearch(text, true)
 		if len(res) > 0 {
-			return &phraseCategory.Category
+			words := make([]string, len(res))
+			for i, term := range res {
+				words[i] = string(term.Word)
+			}
+			return &phraseCategory.Category, words
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
 func (am *AdBlockMatcher) AddBlockedPhrase(phrase string, category string) {

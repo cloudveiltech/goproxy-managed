@@ -4,11 +4,12 @@ import "C"
 
 import (
 	"bufio"
-	"github.com/aymerick/raymond"
 	"io/ioutil"
 	"log"
 	"os"
 	"unsafe"
+
+	"github.com/aymerick/raymond"
 )
 
 var adBlockBlacklistCallback unsafe.Pointer
@@ -35,8 +36,13 @@ func AdBlockMatcherInitialize() {
 	if oldMatcher != nil {
 		adBlockMatcher.bypassEnabled = oldMatcher.bypassEnabled
 	}
+}
 
-	lruCache.Purge()
+//export AdBlockMatcherBuild
+func AdBlockMatcherBuild() {
+	if adBlockMatcher != nil {
+		adBlockMatcher.Build()
+	}
 }
 
 //export AdBlockMatcherParseRuleFile

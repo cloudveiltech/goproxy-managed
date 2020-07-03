@@ -5,10 +5,16 @@ import (
 )
 import (
 	"bytes"
+	"io"
 	"io/ioutil"
+	"log"
 	"strings"
 
+	"compress/flate"
+	"compress/gzip"
+
 	"github.com/cloudveiltech/goproxy"
+	"github.com/dsnet/compress/brotli"
 )
 
 //export ResponseGetStatusCode
@@ -35,11 +41,19 @@ func ResponseGetBody(id int64, res *[]byte) bool {
 	buf := new(bytes.Buffer)
 	buf.ReadFrom(response.Body)
 
-	*res = buf.Bytes()
+	result := buf.Bytes()
+	if response.Uncompressed {
+		*res = result
+	} else {
+		*res = decodeResponseCompression(response.Header.Get("Content-Encoding"), result)
+		if *res == nil {
+			*res = result
+		}
+	}
 
 	//since we'd read all body - we need to recreate reader for client here
 	response.Body.Close()
-	response.Body = ioutil.NopCloser(bytes.NewBuffer(*res))
+	response.Body = ioutil.NopCloser(bytes.NewBuffer(result))
 
 	return true
 }
@@ -53,6 +67,40 @@ func ResponseGetBodyAsString(id int64, res *string) bool {
 	*res = string(bytes[:])
 
 	return true
+}
+
+func decodeResponseCompression(contentEncoding string, body []byte) []byte {
+	switch contentEncoding {
+	case "gzip":
+		reader, err := gzip.NewReader(bytes.NewBuffer(body))
+		return readReader(reader, err)
+	case "br":
+		reader, err := brotli.NewReader(bytes.NewBuffer(body), nil)
+		if err == nil {
+			buf := make([]byte, 1024)
+			body = make([]byte, 0)
+			defer reader.Close()
+			n, _ := reader.Read(buf)
+			for n > 0 {
+				body = append(body, buf...)
+				n, _ = reader.Read(buf)
+			}
+			return body
+		}
+	case "deflate":
+		reader := flate.NewReader(bytes.NewBuffer(body))
+		return readReader(reader, nil)
+	}
+	return body
+}
+
+func readReader(reader io.ReadCloser, err error) []byte {
+	if err == nil {
+		defer reader.Close()
+		body, _ := ioutil.ReadAll(reader)
+		return body
+	}
+	return nil
 }
 
 //export ResponseHasBody
@@ -158,6 +206,7 @@ func ResponseGetCertificate(id int64, index int32, certData *[]byte) int {
 func CreateResponse(id int64, status int32, contentType string, body string) bool {
 	session, exists := sessionMap[id]
 	if !exists {
+		log.Printf("NO SESSION FOR RESPONSE %d", id)
 		return false
 	}
 

@@ -17,6 +17,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -26,9 +27,9 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 	"unsafe"
-	"encoding/base64"
 
 	"github.com/cloudveiltech/goproxy"
 	"github.com/inconshreveable/go-vhost"
@@ -37,10 +38,10 @@ import (
 //import _ "net/http/pprof"
 
 var (
-	proxy               *goproxy.ProxyHttpServer
-	server              *http.Server
-	configuredPortHttp  int16
-	configuredPortHttps int16
+	proxy                             *goproxy.ProxyHttpServer
+	server                            *http.Server
+	configuredPortHttp                int16
+	configuredPortHttps               int16
 	configuredConfigurationServerPort int16
 )
 
@@ -202,9 +203,11 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 						C.free(unsafe.Pointer(unsafeCategory))
 					}
 
+					log.Printf("Page %s blocked by url, category %s", url, *category)
+
 					return r, goproxy.NewResponse(r,
 						goproxy.ContentTypeHtml, http.StatusForbidden,
-						adBlockMatcher.GetBlockPage(url, *category, isRelaxedPolicy, false))
+						adBlockMatcher.GetBlockPage(url, *category, isRelaxedPolicy))
 				}
 			}
 			return r, nil
@@ -231,7 +234,7 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 					certThumbPrint := base64.StdEncoding.EncodeToString(resp.TLS.PeerCertificates[0].Signature)
 
 					if !isCertInException(certThumbPrint) {
-						message := adBlockMatcher.GetBadCertPage(ctx.Req.URL.Host, certThumbPrint)
+						message := adBlockMatcher.GetBadCertPage(ctx.Req.URL.String(), ctx.Req.URL.Host, certThumbPrint)
 						return goproxy.NewResponse(resp.Request, goproxy.ContentTypeHtml, http.StatusForbidden, message)
 					}
 				}
@@ -253,10 +256,13 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 				return resp
 			}
 
-			category := adBlockMatcher.TestContainsForbiddenPhrases(bytesData)
+			bytesData = decodeResponseCompression(resp.Header.Get("Content-Encoding"), bytesData)
+
+			category, matches := adBlockMatcher.TestContainsForbiddenPhrases(bytesData)
 
 			if category != nil {
-				message := adBlockMatcher.GetBlockPage(resp.Request.URL.String(), *category, false, true)
+				log.Printf("Page %s blocked, category: %s, found forbidden phrases: %s", resp.Request.URL.String(), *category, strings.Join(matches, ", "))
+				message := adBlockMatcher.GetBlockPage(resp.Request.URL.String(), *category, false)
 				return goproxy.NewResponse(resp.Request, goproxy.ContentTypeHtml, http.StatusForbidden, message)
 			}
 			return resp
