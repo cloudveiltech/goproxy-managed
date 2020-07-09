@@ -13,6 +13,8 @@ import (
 
 	"encoding/base64"
 
+	"unicode"
+
 	goahocorasick "github.com/anknown/ahocorasick"
 	"github.com/aymerick/raymond"
 )
@@ -233,7 +235,8 @@ func (am *AdBlockMatcher) IsContentSmallEnoughToFilter(contentSize int64) bool {
 }
 
 func (am *AdBlockMatcher) TestContainsForbiddenPhrases(str []byte) (*string, []string) {
-	text := []rune(strings.ToLower(string(str)))
+	originalText := strings.ToLower(string(str))
+	text := []rune(originalText)
 
 	for _, phraseCategory := range am.PhraseCategories {
 		if phraseCategory.processor == nil {
@@ -243,15 +246,35 @@ func (am *AdBlockMatcher) TestContainsForbiddenPhrases(str []byte) (*string, []s
 
 		res := phraseCategory.processor.MultiPatternSearch(text, true)
 		if len(res) > 0 {
-			words := make([]string, len(res))
-			for i, term := range res {
-				words[i] = string(term.Word)
+			words := make([]string, 0)
+			for _, term := range res {
+				startIndex := term.Pos
+				endIndex := term.Pos + len(string(term.Word))
+
+				//check if there's whole word match
+				wholewordMatched := false
+				if startIndex > 0 && isNonLetterAndDigitRune(text[startIndex-1]) {
+					if endIndex < len(text)-2 && isNonLetterAndDigitRune(text[endIndex+1]) {
+						wholewordMatched = true
+					}
+				}
+				if wholewordMatched {
+					words = append(words, string(term.Word))
+				}
 			}
-			return &phraseCategory.Category, words
+			if len(words) > 0 {
+				return &phraseCategory.Category, words
+			} else {
+				return nil, nil
+			}
 		}
 	}
 
 	return nil, nil
+}
+
+func isNonLetterAndDigitRune(r rune) bool {
+	return !unicode.IsLetter(r) && !unicode.IsDigit(r)
 }
 
 func (am *AdBlockMatcher) AddBlockedPhrase(phrase string, category string) {

@@ -191,6 +191,7 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 
 	proxy.OnRequest().DoFunc(
 		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+			monitorLogFileSize()
 			if adBlockMatcher != nil {
 				category, matchType, isRelaxedPolicy := adBlockMatcher.TestUrlBlocked(r.URL.String(), r.Host, r.Referer())
 				if category != nil && matchType == Included {

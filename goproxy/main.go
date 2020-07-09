@@ -4,6 +4,7 @@ import "C"
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -15,14 +16,17 @@ const (
 	SUCCESS                = 1
 	ERROR_PORTS_BUSY       = -1
 	ERROR_CERTS_GENERATION = -2
+	MAX_LOG_SIZE           = 10 * 1024 * 1024
 )
 
 var certsException = make(map[string]bool)
+var logFilePath = ""
+var logFileHandle *os.File
 
 //export AddCertException
 func AddCertException(thumbPrintC *C.char) {
 	thumbPrint := C.GoString(thumbPrintC)
-	_, ok := certsException[thumbPrint] 
+	_, ok := certsException[thumbPrint]
 	if !ok {
 		certsException[thumbPrint] = true
 	}
@@ -46,13 +50,54 @@ func checkPortAvailable(port int16) bool {
 
 //export SetProxyLogFile
 func SetProxyLogFile(logFile *C.char) {
-	logPath := C.GoString(logFile)
-	file, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	logFilePath = C.GoString(logFile)
+	setProxyLogFileInternal(logFilePath)
+}
+
+func setProxyLogFileInternal(logFile string) {
+	logFilePath = logFile
+	logFileHandle, err := os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
 		return
 	}
 
-	redirectStderr(file)
+	redirectStderr(logFileHandle)
+}
+
+func monitorLogFileSize() {
+	stat, err := os.Stat(logFilePath)
+	if err != nil {
+		log.Printf("Can't stat log file %v", err)
+		return
+	}
+
+	if stat.Size() > MAX_LOG_SIZE {
+		log.Printf("Rotate log file")
+		destination, err := os.OpenFile(logFilePath+".1", os.O_CREATE|os.O_RDWR, 0777)
+		if err != nil {
+			log.Printf("Can't open temp file %v", err)
+			return
+		}
+		fileHandle, err := os.OpenFile(logFilePath, os.O_RDONLY, 0666)
+		if err != nil {
+			log.Printf("Can't open log file %v", err)
+			return
+		}
+		fileHandle.Seek(MAX_LOG_SIZE/2, 0)
+
+		defer destination.Close()
+		_, err = io.Copy(destination, fileHandle)
+		if err != nil {
+			log.Printf("Can't copy log file %v", err)
+			return
+		}
+
+		logFileHandle.Close()
+		os.Rename(logFilePath+".1", logFilePath)
+		setProxyLogFileInternal(logFilePath)
+
+		log.Printf("Rotate log file done.")
+	}
 }
 
 //export AdBlockMatcherSetBlacklistCallback
@@ -80,6 +125,7 @@ func StartGoServer(portHttp, portHttps, portConfigurationServer int16, certFileC
 	}
 
 	startGoProxyServer(portHttp, portHttps, portConfigurationServer, certFile, keyFile)
+	monitorLogFileSize()
 	return SUCCESS
 }
 
