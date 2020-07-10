@@ -49,17 +49,18 @@ type PhraseCategory struct {
 }
 
 type AdBlockMatcher struct {
-	MatcherCategories       []*MatcherCategory
-	BypassMatcherCategories []*MatcherCategory
-	PhraseCategories        []*PhraseCategory
-	lastMatcher             *adblock.RuleMatcher
-	lastCategory            *MatcherCategory
-	RulesCnt                int
-	phrasesCount            int
-	bypassEnabled           bool
-	BlockPageTemplate       *raymond.Template
-	BlockCertTemplate       *raymond.Template
-	defaultBlockPageTags    map[string]string
+	WhiteListMatcherCategories []*MatcherCategory
+	BlackListMatcherCategories []*MatcherCategory
+	BypassMatcherCategories    []*MatcherCategory
+	PhraseCategories           []*PhraseCategory
+	lastMatcher                *adblock.RuleMatcher
+	lastCategory               *MatcherCategory
+	RulesCnt                   int
+	phrasesCount               int
+	bypassEnabled              bool
+	BlockPageTemplate          *raymond.Template
+	BlockCertTemplate          *raymond.Template
+	defaultBlockPageTags       map[string]string
 }
 
 func CreateMatcher() *AdBlockMatcher {
@@ -71,10 +72,17 @@ func CreateMatcher() *AdBlockMatcher {
 	return adBlockMatcher
 }
 
-func (am *AdBlockMatcher) addMatcher(category string, bypass bool) {
+func (am *AdBlockMatcher) addMatcher(category string, listType int) {
 	matcher := adblock.NewMatcher()
 	var categoryMatcher *MatcherCategory
-	for _, element := range adBlockMatcher.MatcherCategories {
+	matcherCategories := adBlockMatcher.BlackListMatcherCategories
+	if listType == BypassList {
+		matcherCategories = adBlockMatcher.BypassMatcherCategories
+	} else if listType == Whitelist {
+		matcherCategories = adBlockMatcher.WhiteListMatcherCategories
+	}
+
+	for _, element := range matcherCategories {
 		if element.Category == category {
 			categoryMatcher = element
 			break
@@ -87,10 +95,13 @@ func (am *AdBlockMatcher) addMatcher(category string, bypass bool) {
 			BlockedDomains: make(map[string]bool),
 		}
 
-		if bypass {
+		switch listType {
+		case Whitelist:
+			am.WhiteListMatcherCategories = append(am.BypassMatcherCategories, categoryMatcher)
+		case Blacklist:
+			am.BlackListMatcherCategories = append(am.BypassMatcherCategories, categoryMatcher)
+		case BypassList:
 			am.BypassMatcherCategories = append(am.BypassMatcherCategories, categoryMatcher)
-		} else {
-			am.MatcherCategories = append(am.MatcherCategories, categoryMatcher)
 		}
 	}
 
@@ -161,7 +172,12 @@ func (am *AdBlockMatcher) TestUrlBlocked(url string, host string, referer string
 		return nil, Included, false
 	}
 
-	res1, res2 := am.matchRulesCategories(am.MatcherCategories, url, host, referer)
+	res1, res2 := am.matchRulesCategories(am.WhiteListMatcherCategories, url, host, referer)
+	if res1 != nil {
+		return res1, res2, false
+	}
+
+	res1, res2 = am.matchRulesCategories(am.BlackListMatcherCategories, url, host, referer)
 	if res1 != nil {
 		return res1, res2, false
 	}
@@ -312,10 +328,10 @@ func (am *AdBlockMatcher) Build() {
 		am.phrasesCount += len(phraseCategory.Phrases)
 	}
 
-	if len(am.MatcherCategories) == 0 {
+	if len(am.BlackListMatcherCategories) == 0 && len(am.WhiteListMatcherCategories) == 0 {
 		return
 	}
-	matchers := am.MatcherCategories[len(am.MatcherCategories)-1].Matchers
+	matchers := am.BlackListMatcherCategories[len(am.BlackListMatcherCategories)-1].Matchers
 	am.lastMatcher = matchers[len(matchers)-1]
 
 	debug.FreeOSMemory()

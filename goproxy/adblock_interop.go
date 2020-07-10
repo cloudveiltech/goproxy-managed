@@ -60,12 +60,12 @@ func AdBlockMatcherParseRuleFile(fileNameC *C.char, categoryIdC *C.char, listTyp
 
 	log.Printf("Parsing category %s file %s", categoryId, fileName)
 
-	adBlockMatcher.addMatcher(categoryId, listType == BypassList)
+	adBlockMatcher.addMatcher(categoryId, int(listType))
 
 	if listType == TextTrigger {
 		adBlockMatcher.addPhrasesFromScanner(scanner, categoryId)
 	} else {
-		adBlockMatcher.addRulesFromScanner(scanner, categoryId, listType == Whitelist, listType == BypassList)
+		adBlockMatcher.addRulesFromScanner(scanner, categoryId, int(listType))
 	}
 	return true
 }

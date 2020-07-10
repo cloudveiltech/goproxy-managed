@@ -23,7 +23,7 @@ func (am *AdBlockMatcher) ParseRulesZipArchive(filePath string) {
 	}
 }
 
-func (am *AdBlockMatcher) AddRule(rule string, category string, bypass bool) {
+func (am *AdBlockMatcher) AddRule(rule string, category string, listType int) {
 	r, e := adblock.ParseRule(rule)
 
 	if e != nil {
@@ -36,7 +36,7 @@ func (am *AdBlockMatcher) AddRule(rule string, category string, bypass bool) {
 	}
 
 	if am.RulesCnt%MAX_RULES_PER_MATCHER == 0 {
-		am.addMatcher(category, bypass)
+		am.addMatcher(category, listType)
 	}
 
 	//Check if it's just a domain rule
@@ -73,13 +73,13 @@ func (am *AdBlockMatcher) ParseZipRulesFile(file *zip.File) {
 			log.Printf("Opening triggers %s", file.Name)
 			am.addPhrasesFromScanner(scanner, categoryName)
 		} else if strings.Contains(file.Name, ".bypass") {
-			am.addMatcher(categoryName, true)
+			am.addMatcher(categoryName, BypassList)
 			log.Printf("Opening bypass %s", file.Name)
-			am.addRulesFromScanner(scanner, categoryName, false, true)
+			am.addRulesFromScanner(scanner, categoryName, BypassList)
 		} else if strings.Contains(file.Name, ".rules") {
-			am.addMatcher(categoryName, false)
+			am.addMatcher(categoryName, Blacklist)
 			log.Printf("Opening rules %s", file.Name)
-			am.addRulesFromScanner(scanner, categoryName, false, false)
+			am.addRulesFromScanner(scanner, categoryName, Blacklist)
 		} else {
 			log.Printf("File type recognition failed %s", file.Name)
 		}
@@ -101,13 +101,13 @@ func (am *AdBlockMatcher) addBlockPageFromZipFile(file *zip.File) {
 	am.BlockPageTemplate, _ = raymond.Parse(blockPageContent)
 }
 
-func (am *AdBlockMatcher) addRulesFromScanner(scanner *bufio.Scanner, categoryName string, whitelist bool, bypass bool) {
+func (am *AdBlockMatcher) addRulesFromScanner(scanner *bufio.Scanner, categoryName string, listType int) {
 	for scanner.Scan() {
 		line := scanner.Text()
-		if whitelist && !strings.HasPrefix(line, "@@") {
+		if listType == Whitelist && !strings.HasPrefix(line, "@@") {
 			line = "@@" + line
 		}
-		am.AddRule(line, categoryName, bypass)
+		am.AddRule(line, categoryName, listType)
 	}
 }
 
