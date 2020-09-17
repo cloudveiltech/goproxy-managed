@@ -64,7 +64,7 @@ func (http2Handler *Http2Handler) processHttp2Stream(local *tls.Conn, remote *tl
 	go func() {
 		defer remote.Close()
 		defer local.Close()
-		decoder := hpack.NewDecoder(400096, nil)
+		decoder := hpack.NewDecoder(65536, nil)
 		for {
 			if !http2Handler.readFrame(reverseFramer, directFramer, decoder, false) {
 				return
@@ -72,7 +72,7 @@ func (http2Handler *Http2Handler) processHttp2Stream(local *tls.Conn, remote *tl
 		}
 	}()
 
-	decoder := hpack.NewDecoder(400096, nil)
+	decoder := hpack.NewDecoder(65536, nil)
 	for {
 		if !http2Handler.readFrame(directFramer, reverseFramer, decoder, true) {
 			return
@@ -127,9 +127,9 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 
 		header, ok := http2Handler.lastHeadersBlock[f.Header().StreamID]
 		if ok {
-			headerFields, _ := http2Handler.lastHeadersMap[f.Header().StreamID]
+			//	headerFields, _ := http2Handler.lastHeadersMap[f.Header().StreamID]
 			header.EndStream = false
-			header.BlockFragment = encodeHeaderFields(headerFields)
+			//	header.BlockFragment = encodeHeaderFields(headerFields)
 			writeHeaders(directFramer, header, decoder)
 			delete(http2Handler.lastHeadersBlock, f.Header().StreamID)
 			delete(http2Handler.lastHeadersMap, f.Header().StreamID)
@@ -143,6 +143,7 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 		if len(headerFields) == 0 {
 			log.Printf("Error parsing headers")
 		}
+		writeHeadersImmediately := client || fr.StreamEnded()
 		if client {
 			request := makeHttpRequest(nil, headerFields)
 			var ctx = &goproxy.ProxyCtx{Req: request, Session: atomic.AddInt64(&http2ProxySessionCounter, 1)}
@@ -165,7 +166,12 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 				return false
 			}
 		} else {
-			http2Handler.lastHttpResponse[f.Header().StreamID] = makeHttpResponse(nil, headerFields)
+			response := makeHttpResponse(nil, headerFields)
+			http2Handler.lastHttpResponse[f.Header().StreamID] = response
+			contentType := response.Header.Get("Content-Type")
+			if !isContentTypeFilterable(contentType) {
+				writeHeadersImmediately = true
+			}
 			http2Handler.lastHttpResponse[f.Header().StreamID].Request = http2Handler.lastHttpRequest[f.Header().StreamID]
 		}
 
@@ -178,7 +184,7 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 			Priority:      fr.Priority,
 		}
 
-		if client || fr.StreamEnded() {
+		if writeHeadersImmediately {
 			writeHeaders(directFramer, &header, decoder)
 		} else {
 			http2Handler.lastHeadersMap[f.Header().StreamID] = headerFields
@@ -197,7 +203,11 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 		} else {
 			params := make([]http2.Setting, 0)
 			for i := 0; i < fr.NumSettings(); i++ {
-				params = append(params, fr.Setting(i))
+				setting := fr.Setting(i)
+				params = append(params, setting)
+				if setting.ID == http2.SettingHeaderTableSize {
+					decoder.SetMaxDynamicTableSize(setting.Val)
+				}
 			}
 			directFramer.WriteSettings(params...)
 		}
@@ -220,8 +230,8 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 		fr := f.(*http2.WindowUpdateFrame)
 		directFramer.WriteWindowUpdate(f.Header().StreamID, fr.Increment)
 	case http2.FrameContinuation:
-	//	fr := f.(*http2.ContinuationFrame)
-	//	directFramer.WriteContinuation(f.Header().StreamID, fr.HeadersEnded(), fr.HeaderBlockFragment())
+		fr := f.(*http2.ContinuationFrame)
+		directFramer.WriteContinuation(f.Header().StreamID, fr.HeadersEnded(), fr.HeaderBlockFragment())
 	default:
 		fr := f.(*http2.UnknownFrame)
 		directFramer.WriteRawFrame(f.Header().Type, f.Header().Flags, f.Header().StreamID, fr.Payload())
@@ -380,7 +390,7 @@ func putResponseBody(body []byte, resp *http.Response) {
 func encodeHeaderFields(fields []hpack.HeaderField) []byte {
 	buf := new(bytes.Buffer)
 	encoder := hpack.NewEncoder(buf)
-	encoder.SetMaxDynamicTableSize(4096)
+	encoder.SetMaxDynamicTableSizeLimit(65536)
 	buf.Reset()
 
 	for i := 0; i < len(fields); i++ {
@@ -392,7 +402,7 @@ func encodeHeaderFields(fields []hpack.HeaderField) []byte {
 func encodeHeaders(resp *http.Response) []byte {
 	buf := new(bytes.Buffer)
 	encoder := hpack.NewEncoder(buf)
-	encoder.SetMaxDynamicTableSize(4096)
+	//	encoder.SetMaxDynamicTableSize(65536)
 	buf.Reset()
 
 	writeHeader(encoder, ":status", strconv.Itoa(resp.StatusCode))
