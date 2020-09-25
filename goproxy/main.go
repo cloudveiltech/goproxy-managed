@@ -140,7 +140,7 @@ func main() {
 
 func test() {
 	log.Printf("main: starting HTTP server")
-	startGoProxyServer(14500, 14501, 14502, "rootCertificate.pem", "rootPrivateKey.pem")
+	startGoProxyServer(14600, 14501, 14502, "rootCertificate.pem", "rootPrivateKey.pem")
 
 	log.Printf("main: serving for 1000 seconds")
 

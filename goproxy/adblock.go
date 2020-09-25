@@ -97,9 +97,9 @@ func (am *AdBlockMatcher) addMatcher(category string, listType int) {
 
 		switch listType {
 		case Whitelist:
-			am.WhiteListMatcherCategories = append(am.BypassMatcherCategories, categoryMatcher)
+			am.WhiteListMatcherCategories = append(am.WhiteListMatcherCategories, categoryMatcher)
 		case Blacklist:
-			am.BlackListMatcherCategories = append(am.BypassMatcherCategories, categoryMatcher)
+			am.BlackListMatcherCategories = append(am.BlackListMatcherCategories, categoryMatcher)
 		case BypassList:
 			am.BypassMatcherCategories = append(am.BypassMatcherCategories, categoryMatcher)
 		}

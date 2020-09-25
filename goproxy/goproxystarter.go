@@ -47,6 +47,29 @@ var (
 
 const DEFAULT_HTTPS_PORT uint16 = 443
 
+type HttpsHandler func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string)
+
+func (f HttpsHandler) HandleConnect(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
+	return f(host, ctx)
+}
+
+var handleConnectFunc HttpsHandler = func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
+	hostWithoutPort := host
+	parts := strings.Split(hostWithoutPort, ":")
+	if len(parts) > 1 {
+		hostWithoutPort = strings.ReplaceAll(hostWithoutPort, parts[len(parts)-1], "")
+		log.Printf("Stripped port %s", hostWithoutPort)
+	}
+
+	if adBlockMatcher.IsDomainWhitelisted(hostWithoutPort) {
+		log.Printf("Whitelisting host %s", host)
+		return goproxy.OkConnect, host
+	}
+
+	log.Printf("Analyzing host %s", host)
+	return goproxy.MitmConnect, host
+}
+
 func initGoProxy() {
 	proxy = goproxy.NewProxyHttpServer()
 	proxy.Verbose = true
@@ -62,7 +85,7 @@ func initGoProxy() {
 		proxy.ServeHTTP(w, req)
 	})
 
-	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
+	proxy.OnRequest().HandleConnect(handleConnectFunc)
 
 	if proxy.Verbose {
 		log.Printf("Server inited")
@@ -119,7 +142,6 @@ func runHttpsListener() {
 			if n > 0 {
 				port = binary.BigEndian.Uint16([]byte{helloBuffer[1], helloBuffer[0]})
 				log.Printf("Reading dest port for %d", port)
-
 			}
 
 			tlsConn, err := vhost.TLS(c)
@@ -150,6 +172,28 @@ func runHttpsListener() {
 			proxy.ServeHTTP(resp, connectReq)
 		}(c)
 	}
+}
+
+func chainReqToHttp(client net.Conn) {
+	chainReqToHost(client, fmt.Sprintf("127.0.0.1:%d", configuredPortHttp))
+}
+
+func chainReqToHost(client net.Conn, hostPort string) {
+	remote, err := net.Dial("tcp", hostPort)
+
+	if err != nil {
+		log.Printf("chainReqToHttp error connect %s", err)
+		return
+	}
+
+	//	defer remote.Close()
+	//	defer client.Close()
+
+	go func() {
+		io.Copy(remote, client)
+	}()
+
+	io.Copy(client, remote)
 }
 
 func startHttpServer(port int16) *http.Server {
@@ -274,45 +318,6 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 
 	if proxy.Verbose {
 		log.Printf("Server started")
-	}
-}
-
-func chainReqToHttp(client net.Conn) {
-	remote, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", configuredPortHttp))
-	if err != nil {
-		log.Printf("chainReqToHttp error connect %s", err)
-		return
-	}
-
-	defer remote.Close()
-	defer client.Close()
-
-	go func() {
-		for {
-			n, err := io.Copy(remote, client)
-			if err != nil {
-				log.Printf("error request %s", err)
-				return
-			}
-			if n == 0 {
-				log.Printf("nothing requested close")
-				return
-			}
-			time.Sleep(time.Millisecond) //reduce CPU usage due to infinite nonblocking loop
-		}
-	}()
-
-	for {
-		n, err := io.Copy(client, remote)
-		if err != nil {
-			log.Printf("error response %s", err)
-			return
-		}
-		if n == 0 {
-			log.Printf("nothing responded close")
-			return
-		}
-		time.Sleep(time.Millisecond) //reduce CPU usage due to infinite nonblocking loop
 	}
 }
 
