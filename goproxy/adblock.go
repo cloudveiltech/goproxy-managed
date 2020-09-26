@@ -190,7 +190,27 @@ func (am *AdBlockMatcher) TestUrlBlocked(url string, host string, referer string
 
 	return res1, res2, true
 }
+func (am *AdBlockMatcher) GetWhitelistedDomains() []string {
+	res := make([]string, 0)
 
+	for _, matcherCategory := range am.WhiteListMatcherCategories {
+		for k, v := range matcherCategory.BlockedDomains {
+			if !v {
+				res = append(res, k)
+			}
+		}
+	}
+
+	for _, matcherCategory := range am.BlackListMatcherCategories {
+		for k, v := range matcherCategory.BlockedDomains {
+			if !v {
+				res = append(res, k)
+			}
+		}
+	}
+
+	return res
+}
 func (am *AdBlockMatcher) matchRulesCategories(matcherCategories []*MatcherCategory, url string, host string, referer string) (*string, int) {
 	rq := &adblock.Request{
 		URL:     url,

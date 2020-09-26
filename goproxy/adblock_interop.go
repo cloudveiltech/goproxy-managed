@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"strings"
 	"unsafe"
 
 	"github.com/aymerick/raymond"
@@ -153,5 +154,16 @@ func AdBlockMatcherIsDomainWhitelisted(hostC *C.char) bool {
 		return adBlockMatcher.IsDomainWhitelisted(host)
 	} else {
 		return false
+	}
+}
+
+//export AdBlockMatcherGetWhitelistedDomains
+func AdBlockMatcherGetWhitelistedDomains() *C.char {
+	if adBlockMatcher != nil {
+		domains := adBlockMatcher.GetWhitelistedDomains()
+		res := strings.Join(domains, ";")
+		return C.CString(res)
+	} else {
+		return C.CString("")
 	}
 }

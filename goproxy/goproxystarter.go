@@ -57,8 +57,7 @@ var handleConnectFunc HttpsHandler = func(host string, ctx *goproxy.ProxyCtx) (*
 	hostWithoutPort := host
 	parts := strings.Split(hostWithoutPort, ":")
 	if len(parts) > 1 {
-		hostWithoutPort = strings.ReplaceAll(hostWithoutPort, parts[len(parts)-1], "")
-		log.Printf("Stripped port %s", hostWithoutPort)
+		hostWithoutPort = strings.ReplaceAll(hostWithoutPort, ":"+parts[len(parts)-1], "")
 	}
 
 	if adBlockMatcher.IsDomainWhitelisted(hostWithoutPort) {
@@ -66,7 +65,6 @@ var handleConnectFunc HttpsHandler = func(host string, ctx *goproxy.ProxyCtx) (*
 		return goproxy.OkConnect, host
 	}
 
-	log.Printf("Analyzing host %s", host)
 	return goproxy.MitmConnect, host
 }
 
