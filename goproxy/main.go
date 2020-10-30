@@ -359,7 +359,7 @@ func runHttpsListener() {
 
 func chainReqToHttp(client net.Conn) {
 
-	log.Printf("chainReqToHttp addr %s", client.LocalAddr().(*net.TCPAddr).IP.String())
+	log.Printf("chainReqToHttp addr %s %s", client.LocalAddr().(*net.TCPAddr).IP.String(), client.RemoteAddr().(*net.TCPAddr).IP.String())
 	remote, err := net.Dial("tcp", fmt.Sprintf("%s:%d", client.LocalAddr().(*net.TCPAddr).IP.String(), config.portHttp))
 	if err != nil {
 		log.Printf("chainReqToHttp error connect %s", err)
@@ -492,27 +492,27 @@ func main() {
 
 func test() {
 	log.Printf("main: starting HTTP server")
-	
-		tlsConfig := &tls.Config{
-			//	NextProtos:               []string{"h2", "http/1.1"},
-			//	MinVersion:               tls.VersionTLS12,
-			//CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
-			PreferServerCipherSuites: true,
-		}
 
-		//	proxyUrl, _ := url.Parse("http://127.0.0.1:8888")
-		client := &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: tlsConfig,
-				//			Proxy:           http.ProxyURL(proxyUrl),
-			},
-		}
+	tlsConfig := &tls.Config{
+		//	NextProtos:               []string{"h2", "http/1.1"},
+		//	MinVersion:               tls.VersionTLS12,
+		//CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+		PreferServerCipherSuites: true,
+	}
 
-		resp, err := client.Get("https://www.digikey.com/product-detail/en/jst-sales-america-inc/SXH-001T-P0-6/455-1135-1-ND/527370")
-		if err != nil {
-			return
-		}
-		log.Printf("%d", resp.StatusCode)
+	//	proxyUrl, _ := url.Parse("http://127.0.0.1:8888")
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig,
+			//			Proxy:           http.ProxyURL(proxyUrl),
+		},
+	}
+
+	resp, err := client.Get("https://www.digikey.com/product-detail/en/jst-sales-america-inc/SXH-001T-P0-6/455-1135-1-ND/527370")
+	if err != nil {
+		return
+	}
+	log.Printf("%d", resp.StatusCode)
 
 	Init(14500, 14501, "rootCertificate.pem", "rootPrivateKey.pem")
 	Start()

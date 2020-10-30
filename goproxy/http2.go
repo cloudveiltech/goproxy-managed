@@ -19,6 +19,8 @@ import (
 
 var http2ProxySessionCounter int64
 
+const MIN_FILTERABLE_LENGTH = 100
+
 type Http2Handler struct {
 	lastHttpResponse map[uint32]*http.Response
 	lastHttpRequest  map[uint32]*http.Request
@@ -100,7 +102,9 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 		lastHttpResponse := http2Handler.lastHttpResponse[f.Header().StreamID]
 		if lastHttpResponse != nil && !client {
 			contentType := lastHttpResponse.Header.Get("Content-Type")
-			if isContentTypeFilterable(contentType) {
+			contentLength := lastHttpResponse.ContentLength
+
+			if isContentTypeFilterable(contentType) || contentLength > MIN_FILTERABLE_LENGTH {
 				putResponseBody(body, lastHttpResponse)
 				ctx := http2Handler.proxyCtx[f.Header().StreamID]
 				resp := proxy.FilterResponse(lastHttpResponse, ctx)
@@ -169,7 +173,8 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 			response := makeHttpResponse(nil, headerFields)
 			http2Handler.lastHttpResponse[f.Header().StreamID] = response
 			contentType := response.Header.Get("Content-Type")
-			if !isContentTypeFilterable(contentType) {
+			contentLength, _ := strconv.Atoi(response.Header.Get("Content-Length"))
+			if !isContentTypeFilterable(contentType) || contentLength < MIN_FILTERABLE_LENGTH {
 				writeHeadersImmediately = true
 			}
 			http2Handler.lastHttpResponse[f.Header().StreamID].Request = http2Handler.lastHttpRequest[f.Header().StreamID]
