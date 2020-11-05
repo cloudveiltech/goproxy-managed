@@ -358,7 +358,6 @@ func runHttpsListener() {
 }
 
 func chainReqToHttp(client net.Conn) {
-
 	log.Printf("chainReqToHttp addr %s %s", client.LocalAddr().(*net.TCPAddr).IP.String(), client.RemoteAddr().(*net.TCPAddr).IP.String())
 	remote, err := net.Dial("tcp", fmt.Sprintf("%s:%d", client.LocalAddr().(*net.TCPAddr).IP.String(), config.portHttp))
 	if err != nil {
@@ -370,41 +369,38 @@ func chainReqToHttp(client net.Conn) {
 	defer client.Close()
 
 	go func() {
-		for {
-			n, err := io.Copy(remote, client)
-			if err != nil {
-				log.Printf("error request %s", err)
-				return
-			}
-			if n == 0 {
-				log.Printf("nothing requested close")
-				return
-			}
-			time.Sleep(time.Millisecond) //reduce CPU usage due to infinite nonblocking loop
-		}
+		nonBlockingCopy(remote, client)
 	}()
 
+	nonBlockingCopy(client, remote)
+}
+
+func nonBlockingCopy(from, to net.Conn) {
+	log.Printf("Non blocking copy fired")
+
+	buf := make([]byte, 10240)
 	for {
-		n, err := io.Copy(client, remote)
-		if err != nil {
-			log.Printf("error response %s", err)
-			return
-		}
-		if n == 0 {
-			log.Printf("nothing responded close")
-			return
-		}
-		time.Sleep(time.Millisecond) //reduce CPU usage due to infinite nonblocking loop
-	}
-	/*
-		c := bufio.NewReader(client)
-		req, err := http.ReadRequest(c)
-		if req == nil || err != nil {
-			log.Printf("chainReqToHttp cannot read request of MITM HTTP client: %+#v", err)
+		from.SetDeadline(time.Now().Add(time.Second * 10))
+		if server == nil {
+			log.Printf("Break chain on server stop")
+			break
 		}
 
-		writer := httpResponseWriter{client, req, make(http.Header), 0, false}
-		proxy.ServeHTTP(&writer, req)*/
+		n, err := from.Read(buf)
+		if err != nil && err != io.EOF {
+			log.Printf("error request %s", err)
+			break
+		}
+		if n == 0 {
+			break
+		}
+
+		if _, err := to.Write(buf[:n]); err != nil {
+			log.Printf("error response %s", err)
+			break
+		}
+
+	}
 }
 
 type httpResponseWriter struct {
