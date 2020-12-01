@@ -171,6 +171,7 @@ func matchDomain(domainParts []string, matcherCatergory *MatcherCategory) (bool,
 		domainName = domainParts[i] + "." + domainName
 		value, ok := matcherCatergory.BlockedDomains[domainName]
 		if ok {
+			log.Printf("Matched by domain rule %s", domainName)
 			if value {
 				return true, Included
 			} else {
