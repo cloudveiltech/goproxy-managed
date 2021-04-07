@@ -70,6 +70,7 @@ func ResponseGetBodyAsString(id int64, res *string) bool {
 }
 
 func decodeResponseCompression(contentEncoding string, body []byte) []byte {
+	log.Printf("Decoding body: %s", contentEncoding)
 	switch contentEncoding {
 	case "gzip":
 		reader, err := gzip.NewReader(bytes.NewBuffer(body))

@@ -277,7 +277,6 @@ func Start() {
 				removeSessionFromInteropMap(id)
 
 				response = session.response
-
 				//log.Printf("OnBeforeResponse overhead time: %v, %v", time.Since(startTime), id)
 			}
 
