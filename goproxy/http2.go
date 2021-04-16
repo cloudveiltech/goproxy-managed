@@ -109,12 +109,13 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 		http2Handler.responseBodyMapChunks[f.Header().StreamID] = bodyChunks
 
 		if lastHttpResponse != nil && !client {
-			if fr.StreamEnded() {
+			contentType := lastHttpResponse.Header.Get("Content-Type")
+			isContentTypeFilterable := isContentTypeFilterable(contentType)
+			if isContentTypeFilterable && fr.StreamEnded() {
 				putResponseBody(bodyChunks, lastHttpResponse)
-				contentType := lastHttpResponse.Header.Get("Content-Type")
 				contentLength := lastHttpResponse.ContentLength
 
-				if isContentTypeFilterable(contentType) && contentLength > MIN_FILTERABLE_LENGTH {
+				if contentLength > MIN_FILTERABLE_LENGTH {
 					ctx := http2Handler.proxyCtx[f.Header().StreamID]
 					resp := proxy.FilterResponse(lastHttpResponse, ctx)
 
@@ -137,7 +138,7 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 						return false
 					}
 				}
-			} else {
+			} else if isContentTypeFilterable {
 				return true
 			}
 		}
@@ -153,9 +154,11 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 		}
 
 		for i, _ := range bodyChunks {
-			streamEnded := i == len(bodyChunks)-1
+			streamEnded := i == len(bodyChunks)-1 && fr.StreamEnded()
 			directFramer.WriteData(f.Header().StreamID, streamEnded, bodyChunks[i])
 		}
+
+		delete(http2Handler.responseBodyMapChunks, f.Header().StreamID)
 	case http2.FrameHeaders:
 		fr := f.(*http2.HeadersFrame)
 
