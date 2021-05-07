@@ -232,6 +232,8 @@ func Start() {
 				}
 			}
 
+			request.URL.RawPath = HostPathForceSafeSearch(request.URL.Host, request.URL.RawPath)
+			request.URL, _ = url.Parse(request.RequestURI)
 			return request, response
 		})
 

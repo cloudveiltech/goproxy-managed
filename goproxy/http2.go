@@ -162,7 +162,7 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 	case http2.FrameHeaders:
 		fr := f.(*http2.HeadersFrame)
 
-		headerFields, headerBlock := decodeAllHeaders(directFramer, fr, decoder)
+		headerFields, _ := decodeAllHeaders(directFramer, fr, decoder)
 		if len(headerFields) == 0 {
 			log.Printf("Error parsing headers")
 		}
@@ -201,7 +201,7 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 
 		header := http2.HeadersFrameParam{
 			StreamID:      f.Header().StreamID,
-			BlockFragment: headerBlock,
+			BlockFragment: encodeHeaderFields(headerFields),
 			EndStream:     fr.StreamEnded(),
 			EndHeaders:    fr.HeadersEnded(),
 			PadLength:     0,
@@ -267,10 +267,18 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 func decodeAllHeaders(framer *http2.Framer, fr *http2.HeadersFrame, decoder *hpack.Decoder) ([]hpack.HeaderField, []byte) {
 	buf := new(bytes.Buffer)
 	res := make([]hpack.HeaderField, 0)
+
+	hostIndex := 0
+	pathIndex := 0
 	decoder.SetEmitEnabled(true)
 	decoder.SetMaxStringLength(16 << 20)
 	decoder.SetEmitFunc(func(hf hpack.HeaderField) {
 		if len(hf.Name) > 0 {
+			if hf.Name == ":path" {
+				pathIndex = len(res)
+			} else if hf.Name == ":authority" {
+				hostIndex = len(res)
+			}
 			res = append(res, hf)
 		}
 	})
@@ -283,6 +291,10 @@ func decodeAllHeaders(framer *http2.Framer, fr *http2.HeadersFrame, decoder *hpa
 		log.Printf("Error decode %v", err)
 	}
 	if fr.HeadersEnded() {
+		if hostIndex > 0 || pathIndex > 0 {
+			res[pathIndex].Value = HostPathForceSafeSearch(res[hostIndex].Value, res[pathIndex].Value)
+		}
+
 		return res, buf.Bytes()
 	}
 	for {
@@ -300,6 +312,11 @@ func decodeAllHeaders(framer *http2.Framer, fr *http2.HeadersFrame, decoder *hpa
 			}
 		}
 	}
+
+	if hostIndex > 0 || pathIndex > 0 {
+		res[pathIndex].Value = HostPathForceSafeSearch(res[hostIndex].Value, res[pathIndex].Value)
+	}
+
 	return res, buf.Bytes()
 }
 
@@ -364,6 +381,7 @@ func makeHttpRequest(body []byte, header []hpack.HeaderField) *http.Request {
 			req.Method = v.Value
 		}
 	}
+
 	req.RequestURI = scheme + "://" + authority + path
 	req.URL, _ = url.ParseRequestURI(req.RequestURI)
 	req.Host = req.URL.Host
