@@ -141,8 +141,7 @@ func pemBlockForKey(priv interface{}) *pem.Block {
 }
 
 func GenerateCerts(caCertPath, caKeyPath string) bool {
-
-	// priv, err := rsa.GenerateKey(rand.Reader, *rsaBits)
+	//priv, err := rsa.GenerateKey(rand.Reader, 128)
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		log.Printf("Error generating cert %s", err)
@@ -155,7 +154,7 @@ func GenerateCerts(caCertPath, caKeyPath string) bool {
 			Organization: []string{"Cloudveil Filtering Certificate"},
 		},
 		NotBefore: time.Now(),
-		NotAfter:  time.Now().Add(time.Hour * 24 * 3650),
+		NotAfter:  time.Now().Add(time.Hour * 24 * 365),
 
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},

@@ -20,6 +20,13 @@ import (
 )
 
 const (
+	Blacklist   = 1
+	Whitelist   = 2
+	BypassList  = 3
+	TextTrigger = 4
+)
+
+const (
 	Included = adblock.Included
 	Excluded = adblock.Excluded
 )

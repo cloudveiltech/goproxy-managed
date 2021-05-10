@@ -109,6 +109,7 @@ func AdBlockMatcherSetBlacklistCallback(callback unsafe.Pointer) {
 func StartGoServer(portHttp, portHttps, portConfigurationServer int16, certFileC *C.char, keyFileC *C.char) int16 {
 	debug.SetTraceback("all")
 	debug.SetPanicOnFault(true)
+	initIpUtil()
 
 	if !checkPortAvailable(portHttp) || !checkPortAvailable(portHttps) {
 		return ERROR_PORTS_BUSY
@@ -132,6 +133,21 @@ func StartGoServer(portHttp, portHttps, portConfigurationServer int16, certFileC
 //export StopGoServer
 func StopGoServer() {
 	stopGoProxyServer()
+}
+
+//export IsIpPrivate
+func IsIpPrivate(ipStringC *C.char) int16 {
+	ipString := C.GoString(ipStringC)
+	ip := net.ParseIP(ipString)
+	if ip == nil {
+		log.Printf("Error parsing ip address %s", ipString)
+		return 0
+	}
+
+	if isPrivateIP(ip) {
+		return 1
+	}
+	return 0
 }
 
 func main() {

@@ -37,14 +37,6 @@ import (
 
 //import _ "net/http/pprof"
 
-var (
-	proxy                             *goproxy.ProxyHttpServer
-	server                            *http.Server
-	configuredPortHttp                int16
-	configuredPortHttps               int16
-	configuredConfigurationServerPort int16
-)
-
 const DEFAULT_HTTPS_PORT uint16 = 443
 
 type HttpsHandler func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string)
@@ -248,6 +240,7 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 
 					log.Printf("Page %s blocked by url, category %s", url, *category)
 
+					r.URL.RawPath = HostPathForceSafeSearch(r.URL.Host, r.URL.RawPath)
 					return r, goproxy.NewResponse(r,
 						goproxy.ContentTypeHtml, http.StatusForbidden,
 						adBlockMatcher.GetBlockPage(url, *category, isRelaxedPolicy))

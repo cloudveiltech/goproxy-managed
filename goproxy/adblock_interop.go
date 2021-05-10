@@ -17,13 +17,6 @@ var adBlockBlacklistCallback unsafe.Pointer
 
 var adBlockMatchers map[int32]*AdBlockMatcher
 
-const (
-	Blacklist   = 1
-	Whitelist   = 2
-	BypassList  = 3
-	TextTrigger = 4
-)
-
 //export AdBlockMatcherInitialize
 func AdBlockMatcherInitialize() {
 	var oldMatcher *AdBlockMatcher = nil
