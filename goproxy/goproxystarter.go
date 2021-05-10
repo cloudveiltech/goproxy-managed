@@ -17,6 +17,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
@@ -74,6 +75,19 @@ func initGoProxy() {
 		req.URL.Host = req.Host
 		proxy.ServeHTTP(w, req)
 	})
+
+	proxy.Tr = &http.Transport{
+		MaxIdleConnsPerHost: 10,
+		MaxIdleConns:        1000,
+		IdleConnTimeout:     time.Minute * 10,
+		TLSClientConfig: &tls.Config{
+			NextProtos:               []string{"http/1.1"},
+			InsecureSkipVerify:       true,
+			CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+			PreferServerCipherSuites: true,
+			Renegotiation:            tls.RenegotiateFreelyAsClient,
+		},
+	}
 
 	proxy.OnRequest().HandleConnect(handleConnectFunc)
 
