@@ -114,6 +114,7 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 			InsecureSkipVerify:       true,
 			CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 			PreferServerCipherSuites: true,
+			Renegotiation:            tls.RenegotiateFreelyAsClient,
 		},
 	}
 	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
@@ -233,7 +234,6 @@ func Start() {
 			}
 
 			request.URL.RawPath = HostPathForceSafeSearch(request.URL.Host, request.URL.RawPath)
-			request.URL, _ = url.Parse(request.RequestURI)
 			return request, response
 		})
 
@@ -491,10 +491,8 @@ func test() {
 	log.Printf("main: starting HTTP server")
 
 	tlsConfig := &tls.Config{
-		//	NextProtos:               []string{"h2", "http/1.1"},
-		//	MinVersion:               tls.VersionTLS12,
-		//CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 		PreferServerCipherSuites: true,
+		Renegotiation:            tls.RenegotiateFreelyAsClient,
 	}
 
 	//	proxyUrl, _ := url.Parse("http://127.0.0.1:8888")
