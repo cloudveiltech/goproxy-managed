@@ -301,11 +301,17 @@ func runHttpsListener() {
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", config.portHttps))
 
 	if err != nil {
-		log.Fatalf("Error listening for https connections - %v", err)
+		log.Printf("Error listening for https connections - %v", err)
 		return
 	}
 
 	for {
+		if !IsRunning() {
+			log.Printf("Stopping https listener")
+			ln.Close()
+			return
+		}
+
 		c, err := ln.Accept()
 		if err != nil {
 			log.Printf("Error accepting new connection - %v", err)
@@ -489,25 +495,6 @@ func main() {
 
 func test() {
 	log.Printf("main: starting HTTP server")
-
-	tlsConfig := &tls.Config{
-		PreferServerCipherSuites: true,
-		Renegotiation:            tls.RenegotiateFreelyAsClient,
-	}
-
-	//	proxyUrl, _ := url.Parse("http://127.0.0.1:8888")
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: tlsConfig,
-			//			Proxy:           http.ProxyURL(proxyUrl),
-		},
-	}
-
-	resp, err := client.Get("https://www.digikey.com/product-detail/en/jst-sales-america-inc/SXH-001T-P0-6/455-1135-1-ND/527370")
-	if err != nil {
-		return
-	}
-	log.Printf("%d", resp.StatusCode)
 
 	Init(14500, 14501, "rootCertificate.pem", "rootPrivateKey.pem")
 	Start()

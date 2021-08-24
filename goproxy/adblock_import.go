@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/patriciy/adblock/adblock"
 )
@@ -17,6 +18,7 @@ const (
 func (am *AdBlockMatcher) AddRule(rule string, categoryId int32, listType int32) {
 	bypass := listType == BypassList
 
+	rule = strings.ToLower(rule)
 	r, e := adblock.ParseRule(rule)
 
 	if e != nil {

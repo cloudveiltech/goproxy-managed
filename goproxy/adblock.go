@@ -93,6 +93,10 @@ func (am *AdBlockMatcher) GetBlockPage(url string, category string, reason strin
 }
 
 func (am *AdBlockMatcher) TestUrlBlockedWithMatcherCategories(url string, host string, referer string) ([]*MatcherCategory, []int) {
+	url = strings.ToLower(url)
+	host = strings.ToLower(host)
+	referer = strings.ToLower(referer)
+
 	res1, res2 := am.matchRulesCategories(am.MatcherCategories, url, host, referer)
 	if len(res1) > 0 {
 		return res1, res2
