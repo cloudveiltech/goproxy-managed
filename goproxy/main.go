@@ -365,8 +365,10 @@ func runHttpsListener() {
 }
 
 func chainReqToHttp(client net.Conn) {
-	log.Printf("chainReqToHttp addr %s %s", client.LocalAddr().(*net.TCPAddr).IP.String(), client.RemoteAddr().(*net.TCPAddr).IP.String())
-	remote, err := net.Dial("tcp", fmt.Sprintf("%s:%d", client.LocalAddr().(*net.TCPAddr).IP.String(), config.portHttp))
+	localAddress := client.LocalAddr().(*net.TCPAddr).IP
+
+	log.Printf("chainReqToHttp addr %s %s", localAddress.String(), client.RemoteAddr().(*net.TCPAddr).IP.String())
+	remote, err := net.Dial("tcp", net.JoinHostPort(localAddress.String(), strconv.Itoa(int(config.portHttp))))
 	if err != nil {
 		log.Printf("chainReqToHttp error connect %s", err)
 		return
