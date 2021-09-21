@@ -25,26 +25,28 @@ const MAX_FILTERABLE_LENGTH = 1024 * 1024
 const MIN_FILTERABLE_LENGTH = 100
 
 type Http2Handler struct {
-	lastHttpResponse      map[uint32]*http.Response
-	lastHttpRequest       map[uint32]*http.Request
-	lastHeadersBlock      map[uint32]*http2.HeadersFrameParam
-	proxyCtx              map[uint32]*goproxy.ProxyCtx
-	lastHeadersMap        map[uint32][]hpack.HeaderField
-	responseBodyMapChunks map[uint32][][]byte
-	debouncers            map[uint32]func(f func())
+	lastHttpResponse       map[uint32]*http.Response
+	lastHttpRequest        map[uint32]*http.Request
+	lastHeadersBlock       map[uint32]*http2.HeadersFrameParam
+	proxyCtx               map[uint32]*goproxy.ProxyCtx
+	lastHeadersMap         map[uint32][]hpack.HeaderField
+	responseBodyMapChunks  map[uint32][][]byte
+	debouncers             map[uint32]func(f func())
+	connectionReadyForData bool
 }
 
 func serveHttp2Filtering(r *http.Request, rawClientTls *tls.Conn, remote *tls.Conn) bool {
 	log.Print("Running http2 handler for " + r.URL.String())
 
 	http2Handler := &Http2Handler{
-		lastHttpResponse:      make(map[uint32]*http.Response),
-		lastHeadersBlock:      make(map[uint32]*http2.HeadersFrameParam),
-		lastHeadersMap:        make(map[uint32][]hpack.HeaderField),
-		lastHttpRequest:       make(map[uint32]*http.Request),
-		proxyCtx:              make(map[uint32]*goproxy.ProxyCtx),
-		responseBodyMapChunks: make(map[uint32][][]byte),
-		debouncers:            make(map[uint32]func(f func())),
+		lastHttpResponse:       make(map[uint32]*http.Response),
+		lastHeadersBlock:       make(map[uint32]*http2.HeadersFrameParam),
+		lastHeadersMap:         make(map[uint32][]hpack.HeaderField),
+		lastHttpRequest:        make(map[uint32]*http.Request),
+		proxyCtx:               make(map[uint32]*goproxy.ProxyCtx),
+		responseBodyMapChunks:  make(map[uint32][][]byte),
+		debouncers:             make(map[uint32]func(f func())),
+		connectionReadyForData: false,
 	}
 	go func() {
 		http2Handler.processHttp2Stream(rawClientTls, remote)
@@ -118,6 +120,7 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 		http2Handler.responseBodyMapChunks[streamId] = bodyChunks
 
 		ctx := http2Handler.proxyCtx[streamId]
+
 		blocked, exists := ctx.UserData.(map[string]interface{})["blocked"]
 		whitelisted := exists && !(blocked.(bool))
 
@@ -147,6 +150,9 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 						resp := proxy.FilterResponse(lastHttpResponse, ctx)
 
 						if resp != lastHttpResponse { //new response
+							if !http2Handler.connectionReadyForData {
+								reverseFramer.WriteSettings()
+							}
 							writeHeaders(directFramer, &http2.HeadersFrameParam{
 								StreamID:      streamId,
 								BlockFragment: encodeHeaders(resp),
@@ -218,6 +224,9 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 			_, resp := proxy.FilterRequest(request, ctx)
 
 			if resp != nil {
+				if !http2Handler.connectionReadyForData {
+					reverseFramer.WriteSettings()
+				}
 				writeHeaders(reverseFramer, &http2.HeadersFrameParam{
 					StreamID:      f.Header().StreamID,
 					BlockFragment: encodeHeaders(resp),
@@ -229,7 +238,7 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 				buf := new(bytes.Buffer)
 				buf.ReadFrom(resp.Body)
 				reverseFramer.WriteData(f.Header().StreamID, true, buf.Bytes())
-				reverseFramer.WriteGoAway(f.Header().StreamID, http2.ErrCodeCancel, nil)
+				reverseFramer.WriteGoAway(f.Header().StreamID, http2.ErrCodeRefusedStream, nil)
 				return false
 			}
 		} else {
@@ -266,6 +275,10 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 		directFramer.WriteRSTStream(f.Header().StreamID, fr.ErrCode)
 	case http2.FrameSettings:
 		fr := f.(*http2.SettingsFrame)
+		if !client {
+			http2Handler.connectionReadyForData = true //once server sent the settings we're good to go
+		}
+
 		if fr.IsAck() {
 			directFramer.WriteSettingsAck()
 		} else {
@@ -273,15 +286,17 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 			for i := 0; i < fr.NumSettings(); i++ {
 				setting := fr.Setting(i)
 				params = append(params, setting)
-				if setting.ID == http2.SettingHeaderTableSize {
+				if setting.ID == http2.SettingHeaderTableSize && client {
 					decoder.SetMaxDynamicTableSize(setting.Val)
 				}
 			}
 			directFramer.WriteSettings(params...)
 		}
+
 	case http2.FramePushPromise:
 		fr := f.(*http2.PushPromiseFrame)
 		directFramer.WritePushPromise(http2.PushPromiseParam{
+
 			StreamID:      f.Header().StreamID,
 			PromiseID:     fr.PromiseID,
 			BlockFragment: fr.HeaderBlockFragment(),
@@ -496,6 +511,7 @@ func encodeHeaders(resp *http.Response) []byte {
 	buf.Reset()
 
 	writeHeader(encoder, ":status", strconv.Itoa(resp.StatusCode))
+	writeHeader(encoder, "content-length", strconv.FormatInt(resp.ContentLength, 10))
 	for k, vv := range resp.Header {
 		lowKey := strings.ToLower(k)
 		for _, v := range vv {
