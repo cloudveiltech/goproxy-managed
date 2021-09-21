@@ -90,6 +90,9 @@ func (http2Handler *Http2Handler) processHttp2Stream(local *tls.Conn, remote *tl
 }
 
 func isContentTypeFilterable(contentType string) bool {
+	if strings.Contains(contentType, "protobuf") {
+		return false
+	}
 	return strings.Contains(contentType, "html") ||
 		strings.Contains(contentType, "json")
 }
