@@ -128,7 +128,6 @@ func RequestGetHeaders(id int64, keys *string) int {
 	return len(request.Header)
 }
 
-//returns new path
 func HostPathForceSafeSearch(host, path string) string {
 	// enforce Google safe-search
 	if strings.Contains(host, "google.com") && strings.Contains(path, "/search?") && !strings.Contains(path, "safe=active") {

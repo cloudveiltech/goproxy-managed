@@ -239,6 +239,9 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 
 	proxy.OnRequest().DoFunc(
 		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+			userData := make(map[string]interface{})
+			ctx.UserData = userData
+
 			monitorLogFileSize()
 			if adBlockMatcher != nil {
 				category, matchType, isRelaxedPolicy := adBlockMatcher.TestUrlBlocked(r.URL.String(), r.Host, r.Referer())
@@ -260,6 +263,10 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 						adBlockMatcher.GetBlockPage(url, *category, isRelaxedPolicy))
 				}
 			}
+
+			// if strings.Contains(r.Host, "yandex") {
+			// 	return r, goproxy.NewResponse(r, "text/html; charset=UTF-8", 200, "Blocked by rules1")
+			// }
 			return r, nil
 		})
 

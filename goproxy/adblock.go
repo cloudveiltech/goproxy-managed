@@ -175,7 +175,7 @@ func (am *AdBlockMatcher) IsDomainWhitelisted(host string) bool {
 }
 
 func (am *AdBlockMatcher) TestUrlBlocked(url string, host string, referer string) (category *string, matchType int, isRelaxedPolicy bool) {
-	if am.RulesCnt == 0 {
+	if am == nil || am.RulesCnt == 0 {
 		return nil, Included, false
 	}
 

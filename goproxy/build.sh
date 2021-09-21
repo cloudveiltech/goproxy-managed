@@ -2,21 +2,19 @@
 
 export GOPROXY_BIN=$PWD/bin/x64
 
-export PROXY_OUTPUT_FILE=libproxy.dylib
-
 export GOOS=darwin
 export GOARCH=amd64
 export CC=gcc
 export CGO_ENABLED=1
-bash build-internal.sh
 
-export PROXY_OUTPUT_FILE=proxy.dll
-export GOOS=windows
-export CC=x86_64-w64-mingw32-gcc
-bash build-internal.sh
+echo "Building x64..."
+go build -ldflags "-s -w" --buildmode=c-archive -o proxy-x64.a
 
-export GOPROXY_BIN=$PWD/bin/x86
-export GOARCH=386
-export CC=i686-w64-mingw32-gcc
-bash build-internal.sh
+echo "Building arm..."
+export GOARCH=arm64
+go build -ldflags "-s -w" --buildmode=c-archive -o proxy-arm64.a
 
+lipo -create proxy-x64.a proxy-arm64.a -output proxy.a
+lipo -info proxy.a
+
+echo "done"
