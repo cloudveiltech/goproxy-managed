@@ -58,6 +58,8 @@ var (
 	portMap       = make(map[int]int)
 )
 
+//var fileData []byte
+
 const proxyNextActionKey string = "__proxyNextAction__"
 const DEFAULT_HTTPS_PORT = 443
 
@@ -279,9 +281,14 @@ func Start() {
 				removeSessionFromInteropMap(id)
 
 				response = session.response
-				//log.Printf("OnBeforeResponse overhead time: %v, %v", time.Since(startTime), id)
 			}
-
+			/*
+				if strings.Contains(response.Header.Get("Content-Type"), "image") && response.ContentLength > 1024 {
+					if fileData == nil {
+						fileData, _ = ioutil.ReadFile("./blocked.png")
+					}
+					response = goproxy.NewResponse(resp.Request, "image/png", 200, string(fileData))
+				}*/
 			return response
 		})
 

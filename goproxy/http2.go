@@ -11,9 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
-	"time"
 
-	"github.com/bep/debounce"
 	"github.com/cloudveiltech/goproxy"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
@@ -25,6 +23,7 @@ const MAX_FILTERABLE_LENGTH = 1024 * 1024
 const MIN_FILTERABLE_LENGTH = 100
 
 type Http2Handler struct {
+	maxFrameSize           uint32
 	lastHttpResponse       map[uint32]*http.Response
 	lastHttpRequest        map[uint32]*http.Request
 	lastHeadersBlock       map[uint32]*http2.HeadersFrameParam
@@ -39,6 +38,7 @@ func serveHttp2Filtering(r *http.Request, rawClientTls *tls.Conn, remote *tls.Co
 	log.Print("Running http2 handler for " + r.URL.String())
 
 	http2Handler := &Http2Handler{
+		maxFrameSize:           1024,
 		lastHttpResponse:       make(map[uint32]*http.Response),
 		lastHeadersBlock:       make(map[uint32]*http2.HeadersFrameParam),
 		lastHeadersMap:         make(map[uint32][]hpack.HeaderField),
@@ -96,7 +96,8 @@ func isContentTypeFilterable(contentType string) bool {
 		return false
 	}
 	return strings.Contains(contentType, "html") ||
-		strings.Contains(contentType, "json")
+		strings.Contains(contentType, "json") ||
+		strings.Contains(contentType, "image")
 }
 
 func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.Framer, decoder *hpack.Decoder, client bool) bool {
@@ -139,11 +140,11 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 			if !whitelisted && lastHttpResponse != nil && !client {
 				contentType := lastHttpResponse.Header.Get("Content-Type")
 				isContentTypeFilterable := isContentTypeFilterable(contentType)
-
+				isImage := strings.Contains(contentType, "image")
 				putResponseBody(bodyChunks, lastHttpResponse)
 				contentLength := lastHttpResponse.ContentLength
 
-				isContentTypeFilterable = isContentTypeFilterable && contentLength < MAX_FILTERABLE_LENGTH
+				isContentTypeFilterable = isContentTypeFilterable && (contentLength < MAX_FILTERABLE_LENGTH || isImage)
 				if isContentTypeFilterable && streamEnded {
 					if contentLength > MIN_FILTERABLE_LENGTH {
 						ctx := http2Handler.proxyCtx[streamId]
@@ -163,8 +164,8 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 							}, decoder)
 							buf := new(bytes.Buffer)
 							buf.ReadFrom(resp.Body)
-							directFramer.WriteData(streamId, true, buf.Bytes())
-							directFramer.WriteGoAway(streamId, http2.ErrCodeCancel, nil)
+							writeFinalData(directFramer, f.Header().StreamID, buf, int(http2Handler.maxFrameSize))
+							//		directFramer.WriteGoAway(streamId, http2.ErrCodeCancel, nil)
 							delete(http2Handler.lastHttpResponse, streamId)
 							delete(http2Handler.lastHttpRequest, streamId)
 							delete(http2Handler.responseBodyMapChunks, streamId)
@@ -196,18 +197,18 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 		}
 
 		processDataFrameFunc(false, streamId, directFramer, reverseFramer, decoder, client)
-
-		debouncer, exists := http2Handler.debouncers[streamId]
-		if !exists {
-			debouncer = debounce.New(time.Millisecond * 1000)
-			http2Handler.debouncers[streamId] = debouncer
-		}
-		debouncer(func() {
-			_, exists := http2Handler.debouncers[streamId]
-			if exists {
-				processDataFrameFunc(true, streamId, directFramer, reverseFramer, decoder, client)
+		/*
+			debouncer, exists := http2Handler.debouncers[streamId]
+			if !exists {
+				debouncer = debounce.New(time.Millisecond * 1000)
+				http2Handler.debouncers[streamId] = debouncer
 			}
-		})
+			debouncer(func() {
+				_, exists := http2Handler.debouncers[streamId]
+				if exists {
+					processDataFrameFunc(true, streamId, directFramer, reverseFramer, decoder, client)
+				}
+			})*/
 	case http2.FrameHeaders:
 		fr := f.(*http2.HeadersFrame)
 
@@ -237,7 +238,8 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 				}, decoder)
 				buf := new(bytes.Buffer)
 				buf.ReadFrom(resp.Body)
-				reverseFramer.WriteData(f.Header().StreamID, true, buf.Bytes())
+
+				writeFinalData(reverseFramer, f.Header().StreamID, buf, int(http2Handler.maxFrameSize))
 				reverseFramer.WriteGoAway(f.Header().StreamID, http2.ErrCodeRefusedStream, nil)
 				return false
 			}
@@ -289,6 +291,12 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 				if setting.ID == http2.SettingHeaderTableSize && client {
 					decoder.SetMaxDynamicTableSize(setting.Val)
 				}
+				if setting.ID == http2.SettingMaxFrameSize && client {
+					if http2Handler.maxFrameSize > setting.Val {
+						http2Handler.maxFrameSize = setting.Val
+					}
+				}
+
 			}
 			directFramer.WriteSettings(params...)
 		}
@@ -377,6 +385,20 @@ func decodeAllHeaders(framer *http2.Framer, fr *http2.HeadersFrame, decoder *hpa
 	}
 
 	return res, buf.Bytes()
+}
+
+func writeFinalData(framer *http2.Framer, streamId uint32, data *bytes.Buffer, chunkSize int) {
+	dataToSend := data.Bytes()
+	for i := 0; i < len(dataToSend); i += chunkSize {
+		end := i + chunkSize
+		dataEnded := false
+		if end >= len(dataToSend) {
+			end = len(dataToSend)
+			dataEnded = true
+		}
+
+		framer.WriteData(streamId, dataEnded, dataToSend[i:end])
+	}
 }
 
 func writeHeaders(framer *http2.Framer, param *http2.HeadersFrameParam, decoder *hpack.Decoder) {
