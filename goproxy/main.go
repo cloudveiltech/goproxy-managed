@@ -5,6 +5,7 @@ import "C"
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -16,6 +17,7 @@ const (
 	SUCCESS                = 1
 	ERROR_PORTS_BUSY       = -1
 	ERROR_CERTS_GENERATION = -2
+	ERROR_IMAGE_READ       = -3
 	MAX_LOG_SIZE           = 10 * 1024 * 1024
 )
 
@@ -106,7 +108,7 @@ func AdBlockMatcherSetBlacklistCallback(callback unsafe.Pointer) {
 }
 
 //export StartGoServer
-func StartGoServer(portHttp, portHttps, portConfigurationServer int16, certFileC *C.char, keyFileC *C.char) int16 {
+func StartGoServer(portHttp, portHttps, portConfigurationServer int16, certFileC *C.char, keyFileC *C.char, bannedImageFileC *C.char) int16 {
 	debug.SetTraceback("all")
 	debug.SetPanicOnFault(true)
 	initIpUtil()
@@ -125,6 +127,12 @@ func StartGoServer(portHttp, portHttps, portConfigurationServer int16, certFileC
 		}
 	}
 
+	bannedImagePath := C.GoString(bannedImageFileC)
+	BLOCKED_IMAGE_BYTES, err = ioutil.ReadFile(bannedImagePath)
+	if err != nil {
+		log.Printf("Can't load blocked image: %v", err)
+		return ERROR_IMAGE_READ
+	}
 	startGoProxyServer(portHttp, portHttps, portConfigurationServer, certFile, keyFile)
 	monitorLogFileSize()
 	return SUCCESS
@@ -155,19 +163,22 @@ func main() {
 }
 
 func test() {
-	log.Printf("main: starting HTTP server")
+	file, _ := ioutil.ReadFile("/Users/dgoraschenko/Downloads/4.png")
+	CheckImage("testurl", file)
+
+	/*log.Printf("main: starting HTTP server")
 	startGoProxyServer(14600, 14501, 14502, "rootCertificate.pem", "rootPrivateKey.pem")
 
 	log.Printf("main: serving for 1000 seconds")
 
 	var quit = false
-
-	for !quit {
-		//line, _ = reader.ReadString('\n')
-		//if strings.TrimSpace(line) == "quit" {
-		//	quit = true
-		//}
-	}
+	*/
+	//	for !quit {
+	//line, _ = reader.ReadString('\n')
+	//if strings.TrimSpace(line) == "quit" {
+	//	quit = true
+	//}
+	//	}
 
 	//	Stop()
 	//	log.Printf("main: done. exiting")

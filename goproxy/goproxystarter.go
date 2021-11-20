@@ -38,6 +38,10 @@ import (
 
 //import _ "net/http/pprof"
 
+var BLOCKED_IMAGE_BYTES []byte
+
+const BLOCKED_IMAGE_CONTENT_TYPE = "image/webp"
+
 const DEFAULT_HTTPS_PORT uint16 = 443
 
 type HttpsHandler func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string)
@@ -297,7 +301,9 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 				}
 			}
 
-			if !adBlockMatcher.TestContentTypeIsFiltrable(resp.Header.Get("Content-Type")) {
+			contentType := resp.Header.Get("Content-Type")
+			isImage := strings.Contains(contentType, "image")
+			if !adBlockMatcher.TestContentTypeIsFiltrable(contentType) && !isImage {
 				return resp
 			}
 			buf := new(bytes.Buffer)
@@ -309,18 +315,31 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 			resp.Body.Close()
 			resp.Body = ioutil.NopCloser(bytes.NewBuffer(bytesData))
 
-			if !adBlockMatcher.IsContentSmallEnoughToFilter(int64(len(bytesData))) {
-				return resp
-			}
+			if isImage && len(bytesData) > 10240 { //10kb
+				err, isAllowed := CheckImage(resp.Request.RequestURI, bytesData)
+				if err != nil {
+					log.Printf("Image checking fail: %v", err)
+				} else {
+					if isAllowed {
+						return resp
+					} else {
+						return goproxy.NewResponse(resp.Request, BLOCKED_IMAGE_CONTENT_TYPE, 200, string(BLOCKED_IMAGE_BYTES))
+					}
+				}
+			} else {
+				if !adBlockMatcher.IsContentSmallEnoughToFilter(int64(len(bytesData))) {
+					return resp
+				}
 
-			bytesData = decodeResponseCompression(resp.Header.Get("Content-Encoding"), bytesData)
+				bytesData = decodeResponseCompression(resp.Header.Get("Content-Encoding"), bytesData)
 
-			category, matches := adBlockMatcher.TestContainsForbiddenPhrases(bytesData)
+				category, matches := adBlockMatcher.TestContainsForbiddenPhrases(bytesData)
 
-			if category != nil {
-				log.Printf("Page %s blocked, category: %s, found forbidden phrases: %s", resp.Request.URL.String(), *category, strings.Join(matches, ", "))
-				message := adBlockMatcher.GetBlockPage(resp.Request.URL.String(), *category, false)
-				return goproxy.NewResponse(resp.Request, goproxy.ContentTypeHtml, http.StatusForbidden, message)
+				if category != nil {
+					log.Printf("Page %s blocked, category: %s, found forbidden phrases: %s", resp.Request.URL.String(), *category, strings.Join(matches, ", "))
+					message := adBlockMatcher.GetBlockPage(resp.Request.URL.String(), *category, false)
+					return goproxy.NewResponse(resp.Request, goproxy.ContentTypeHtml, http.StatusForbidden, message)
+				}
 			}
 			return resp
 		})
