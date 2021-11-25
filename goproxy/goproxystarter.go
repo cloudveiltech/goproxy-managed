@@ -345,7 +345,7 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 		})
 
 	runConfigurationServerListener()
-	go runHttpsListener()
+	runHttpsListener()
 
 	if proxy.Verbose {
 		log.Printf("Server started")

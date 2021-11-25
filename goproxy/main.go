@@ -163,23 +163,6 @@ func main() {
 }
 
 func test() {
-	file, _ := ioutil.ReadFile("/Users/dgoraschenko/Downloads/4.png")
-	CheckImage("testurl", file)
-
-	/*log.Printf("main: starting HTTP server")
+	log.Printf("main: starting HTTP server")
 	startGoProxyServer(14600, 14501, 14502, "rootCertificate.pem", "rootPrivateKey.pem")
-
-	log.Printf("main: serving for 1000 seconds")
-
-	var quit = false
-	*/
-	//	for !quit {
-	//line, _ = reader.ReadString('\n')
-	//if strings.TrimSpace(line) == "quit" {
-	//	quit = true
-	//}
-	//	}
-
-	//	Stop()
-	//	log.Printf("main: done. exiting")
 }
