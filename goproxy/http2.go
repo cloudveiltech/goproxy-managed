@@ -97,7 +97,10 @@ func isContentTypeFilterable(contentType string) bool {
 	}
 	return strings.Contains(contentType, "html") ||
 		strings.Contains(contentType, "json") ||
-		strings.Contains(contentType, "image")
+		strings.Contains(contentType, "image/png") ||
+		strings.Contains(contentType, "image/jpg") ||
+		strings.Contains(contentType, "image/jpeg") ||
+		strings.Contains(contentType, "image/webp")
 }
 
 func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.Framer, decoder *hpack.Decoder, client bool) bool {
@@ -122,8 +125,11 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 
 		ctx := http2Handler.proxyCtx[streamId]
 
-		blocked, exists := ctx.UserData.(map[string]interface{})["blocked"]
-		whitelisted := exists && !(blocked.(bool))
+		whitelisted := false
+		if ctx != nil && ctx.UserData != nil {
+			blocked, exists := ctx.UserData.(map[string]interface{})["blocked"]
+			whitelisted = exists && !(blocked.(bool))
+		}
 
 		processDataFrameFunc := func(force bool, streamId uint32, directFramer, reverseFramer *http2.Framer, decoder *hpack.Decoder, client bool) bool {
 			if force {
@@ -132,7 +138,7 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 			lastHttpResponse = http2Handler.lastHttpResponse[streamId]
 			bodyChunks = http2Handler.responseBodyMapChunks[streamId]
 
-			if lastHttpResponse != nil {
+			if lastHttpResponse != nil && lastHttpResponse.Request != nil {
 				log.Printf("Process frame data %s", lastHttpResponse.Request.RequestURI)
 			}
 

@@ -108,9 +108,10 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 	})
 
 	proxy.Tr = &http.Transport{
-		MaxIdleConnsPerHost: 10,
-		MaxIdleConns:        1000,
-		IdleConnTimeout:     time.Minute * 10,
+		MaxIdleConnsPerHost:   10,
+		MaxIdleConns:          1000,
+		IdleConnTimeout:       time.Minute * 10,
+		ResponseHeaderTimeout: time.Minute * 10,
 		TLSClientConfig: &tls.Config{
 			NextProtos:               []string{"http/1.1"},
 			InsecureSkipVerify:       true,
@@ -282,13 +283,7 @@ func Start() {
 
 				response = session.response
 			}
-			/*
-				if strings.Contains(response.Header.Get("Content-Type"), "image") && response.ContentLength > 1024 {
-					if fileData == nil {
-						fileData, _ = ioutil.ReadFile("./blocked.png")
-					}
-					response = goproxy.NewResponse(resp.Request, "image/png", 200, string(fileData))
-				}*/
+
 			return response
 		})
 
@@ -396,7 +391,7 @@ func nonBlockingCopy(from, to net.Conn) {
 
 	buf := make([]byte, 10240)
 	for {
-		from.SetDeadline(time.Now().Add(time.Second * 10))
+		from.SetDeadline(time.Now().Add(time.Minute * 10))
 		if server == nil {
 			log.Printf("Break chain on server stop")
 			break
@@ -503,6 +498,9 @@ func main() {
 }
 
 func test() {
+
+	t := net.JoinHostPort("2605:b100:71c:a3f4:64ef:147b:f573:5ef5", "15400")
+	log.Printf("%s", t)
 	log.Printf("main: starting HTTP server")
 
 	Init(14500, 14501, "rootCertificate.pem", "rootPrivateKey.pem")
