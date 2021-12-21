@@ -41,6 +41,7 @@ import (
 var BLOCKED_IMAGE_BYTES []byte
 
 const BLOCKED_IMAGE_CONTENT_TYPE = "image/webp"
+const MIN_FILTERABLE_LENGTH_IMAGE = 1024
 
 const DEFAULT_HTTPS_PORT uint16 = 443
 
@@ -81,9 +82,10 @@ func initGoProxy() {
 	})
 
 	proxy.Tr = &http.Transport{
-		MaxIdleConnsPerHost: 10,
-		MaxIdleConns:        1000,
-		IdleConnTimeout:     time.Minute * 10,
+		MaxIdleConnsPerHost:   10,
+		MaxIdleConns:          1000,
+		IdleConnTimeout:       time.Minute * 10,
+		ResponseHeaderTimeout: time.Minute * 10,
 		TLSClientConfig: &tls.Config{
 			NextProtos:               []string{"http/1.1"},
 			InsecureSkipVerify:       true,
@@ -315,7 +317,7 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 			resp.Body.Close()
 			resp.Body = ioutil.NopCloser(bytes.NewBuffer(bytesData))
 
-			if isImage && len(bytesData) > 10240 { //10kb
+			if isImage && len(bytesData) > MIN_FILTERABLE_LENGTH_IMAGE {
 				err, isAllowed := CheckImage(resp.Request.RequestURI, bytesData)
 				if err != nil {
 					log.Printf("Image checking fail: %v", err)
@@ -345,7 +347,7 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 		})
 
 	runConfigurationServerListener()
-	runHttpsListener()
+	go runHttpsListener()
 
 	if proxy.Verbose {
 		log.Printf("Server started")
