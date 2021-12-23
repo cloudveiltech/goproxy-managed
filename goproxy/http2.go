@@ -95,12 +95,16 @@ func isContentTypeFilterable(contentType string) bool {
 	if strings.Contains(contentType, "protobuf") {
 		return false
 	}
-	return strings.Contains(contentType, "html") ||
-		strings.Contains(contentType, "json") ||
-		strings.Contains(contentType, "image/png") ||
-		strings.Contains(contentType, "image/jpg") ||
-		strings.Contains(contentType, "image/jpeg") ||
-		strings.Contains(contentType, "image/webp")
+
+	filterable := strings.Contains(contentType, "html") || strings.Contains(contentType, "json")
+
+	if isImageFilteringEnabled && !filterable {
+		filterable = strings.Contains(contentType, "image/png") ||
+			strings.Contains(contentType, "image/jpg") ||
+			strings.Contains(contentType, "image/jpeg") ||
+			strings.Contains(contentType, "image/webp")
+	}
+	return filterable
 }
 
 func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.Framer, decoder *hpack.Decoder, client bool) bool {

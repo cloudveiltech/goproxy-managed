@@ -304,7 +304,8 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 			}
 
 			contentType := resp.Header.Get("Content-Type")
-			isImage := strings.Contains(contentType, "image")
+			isImage := strings.Contains(contentType, "image") && isImageFilteringEnabled
+
 			if !adBlockMatcher.TestContentTypeIsFiltrable(contentType) && !isImage {
 				return resp
 			}

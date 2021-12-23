@@ -17,4 +17,5 @@ go build -ldflags "-s -w" --buildmode=c-archive -o proxy-arm64.a
 lipo -create proxy-x64.a proxy-arm64.a -output proxy.a
 lipo -info proxy.a
 
+cp -f proxy-x64.h proxy.h
 echo "done"

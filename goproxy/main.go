@@ -24,6 +24,7 @@ const (
 var certsException = make(map[string]bool)
 var logFilePath = ""
 var logFileHandle *os.File
+var isImageFilteringEnabled = false
 
 //export AddCertException
 func AddCertException(thumbPrintC *C.char) {
@@ -128,14 +129,22 @@ func StartGoServer(portHttp, portHttps, portConfigurationServer int16, certFileC
 	}
 
 	bannedImagePath := C.GoString(bannedImageFileC)
-	BLOCKED_IMAGE_BYTES, err = ioutil.ReadFile(bannedImagePath)
-	if err != nil {
-		log.Printf("Can't load blocked image: %v", err)
-		return ERROR_IMAGE_READ
+	if bannedImagePath != "" {
+		BLOCKED_IMAGE_BYTES, err = ioutil.ReadFile(bannedImagePath)
+		if err != nil {
+			log.Printf("Can't load blocked image: %v", err)
+			return ERROR_IMAGE_READ
+		}
 	}
 	startGoProxyServer(portHttp, portHttps, portConfigurationServer, certFile, keyFile)
 	monitorLogFileSize()
 	return SUCCESS
+}
+
+//export SetImageFilteringEnabled
+func SetImageFilteringEnabled(enabled bool) {
+	log.Printf("Setting Image filtering to: %v", enabled)
+	isImageFilteringEnabled = enabled
 }
 
 //export StopGoServer
