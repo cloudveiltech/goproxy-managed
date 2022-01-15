@@ -236,6 +236,9 @@ func Start() {
 				}
 			}
 
+			if strings.Contains(request.URL.Host, "vimeo") {
+				request.Header.Set("cookie", CookiePatchSafeSearch(request.URL.Host, request.Header.Get("cookie")))
+			}
 			request.URL.RawPath = HostPathForceSafeSearch(request.URL.Host, request.URL.RawPath)
 			return request, response
 		})

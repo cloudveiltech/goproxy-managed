@@ -343,6 +343,7 @@ func decodeAllHeaders(framer *http2.Framer, fr *http2.HeadersFrame, decoder *hpa
 
 	hostIndex := 0
 	pathIndex := 0
+	cookieIndex := 0
 	decoder.SetEmitEnabled(true)
 	decoder.SetMaxStringLength(16 << 20)
 	decoder.SetEmitFunc(func(hf hpack.HeaderField) {
@@ -351,6 +352,8 @@ func decodeAllHeaders(framer *http2.Framer, fr *http2.HeadersFrame, decoder *hpa
 				pathIndex = len(res)
 			} else if hf.Name == ":authority" {
 				hostIndex = len(res)
+			} else if hf.Name == "cookie" {
+				cookieIndex = len(res)
 			}
 			res = append(res, hf)
 		}
@@ -366,6 +369,10 @@ func decodeAllHeaders(framer *http2.Framer, fr *http2.HeadersFrame, decoder *hpa
 	if fr.HeadersEnded() {
 		if hostIndex > 0 || pathIndex > 0 {
 			res[pathIndex].Value = HostPathForceSafeSearch(res[hostIndex].Value, res[pathIndex].Value)
+
+			if cookieIndex > 0 {
+				res[cookieIndex].Value = CookiePatchSafeSearch(res[hostIndex].Value, res[cookieIndex].Value)
+			}
 		}
 
 		return res, buf.Bytes()
@@ -388,6 +395,9 @@ func decodeAllHeaders(framer *http2.Framer, fr *http2.HeadersFrame, decoder *hpa
 
 	if hostIndex > 0 || pathIndex > 0 {
 		res[pathIndex].Value = HostPathForceSafeSearch(res[hostIndex].Value, res[pathIndex].Value)
+		if cookieIndex > 0 {
+			res[cookieIndex].Value = CookiePatchSafeSearch(res[hostIndex].Value, res[cookieIndex].Value)
+		}
 	}
 
 	return res, buf.Bytes()
