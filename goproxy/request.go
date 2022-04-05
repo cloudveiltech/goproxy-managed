@@ -142,3 +142,20 @@ func HostPathForceSafeSearch(host, path string) string {
 	}
 	return path
 }
+
+func CookiePatchSafeSearch(host, cookieValue string) string {
+	if strings.Contains(host, "vimeo") {
+		cookieParts := strings.Split(cookieValue, ";")
+		newCookieParts := make([]string, 0)
+		for _, cookie := range cookieParts {
+			if !strings.Contains(cookie, "content_rating") {
+				newCookieParts = append(newCookieParts, cookie)
+			}
+		}
+
+		newCookieParts = append(newCookieParts, "content_rating=7")
+
+		return strings.Join(newCookieParts, ";")
+	}
+	return cookieValue
+}

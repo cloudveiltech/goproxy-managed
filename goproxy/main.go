@@ -31,6 +31,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -165,6 +166,8 @@ func Start() {
 		log.Printf("Server is about to start")
 	}
 
+	debug.SetTraceback("all")
+
 	server = startHttpServer()
 
 	proxy.OnRequest().DoFunc(
@@ -192,7 +195,6 @@ func Start() {
 
 			// Now run our matching engine.
 			if AdBlockMatcherAreListsLoaded() {
-
 				url := request.URL.String()
 				host := request.URL.Hostname()
 
@@ -236,6 +238,9 @@ func Start() {
 				}
 			}
 
+			if strings.Contains(request.URL.Host, "vimeo") {
+				request.Header.Set("cookie", CookiePatchSafeSearch(request.URL.Host, request.Header.Get("cookie")))
+			}
 			request.URL.RawPath = HostPathForceSafeSearch(request.URL.Host, request.URL.RawPath)
 			return request, response
 		})
@@ -269,6 +274,7 @@ func Start() {
 				}
 			}
 
+			log.Printf("Response filtering %s", ctx.Req.URL.String())
 			// TODO: Call x509.Certificate.Verify
 			// We should be able to glean from that whether or not we do bad SSL page.
 			// A couple of things here:
@@ -505,6 +511,10 @@ func test() {
 
 	Init(14500, 14501, "rootCertificate.pem", "rootPrivateKey.pem")
 	Start()
+	SetProxyLogFile("text.log")
+
+	AdBlockMatcherInitialize()
+	AdblockMatcherLoadingFinished()
 
 	log.Printf("main: serving for 1000 seconds")
 

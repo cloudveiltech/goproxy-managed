@@ -16,6 +16,9 @@ namespace GoProxyWrapper
         [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl, EntryPoint = "AdBlockMatcherInitialize")]
         public static extern void Initialize();
 
+        [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl, EntryPoint = "AdblockMatcherLoadingFinished")]
+        public static extern void LoadingFinished();
+
         [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl, EntryPoint = "AdBlockMatcherParseRuleFile")]
         internal static extern void ParseRuleFile(GoString fileName, int categoryId, ListType listType);
 

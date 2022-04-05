@@ -12,6 +12,7 @@ import (
 )
 
 var adBlockMatcher *AdBlockMatcher = nil
+var adBlockMatcherNew *AdBlockMatcher = nil
 
 var onWhitelistCallback unsafe.Pointer
 var onBlacklistCallback unsafe.Pointer
@@ -20,23 +21,29 @@ var adBlockMatchers map[int32]*AdBlockMatcher
 
 //export AdBlockMatcherInitialize
 func AdBlockMatcherInitialize() {
-	var oldMatcher *AdBlockMatcher = nil
+	adBlockMatcherNew = CreateMatcher()
 
 	if adBlockMatcher != nil {
-		oldMatcher = adBlockMatcher
-	}
-
-	adBlockMatcher = CreateMatcher()
-
-	if oldMatcher != nil {
-		adBlockMatcher.bypassEnabled = oldMatcher.bypassEnabled
+		adBlockMatcherNew.bypassEnabled = adBlockMatcher.bypassEnabled
 	}
 }
 
 //export AdBlockMatcherParseRuleFile
 func AdBlockMatcherParseRuleFile(fileName string, categoryId int32, listType int32) {
-	log.Printf("AdBlockMatcherParseRuleFile11(%s, %d, %d)", fileName, categoryId, listType)
-	adBlockMatcher.ParseRuleFile(fileName, categoryId, listType)
+	log.Printf("AdBlockMatcherParseRuleFile(%s, %d, %d)", fileName, categoryId, listType)
+	adBlockMatcherNew.ParseRuleFile(fileName, categoryId, listType)
+}
+
+//export AdblockMatcherLoadingFinished
+func AdblockMatcherLoadingFinished() {
+	log.Printf("AdblockMatcherLoadingFinished")
+	if adBlockMatcherNew != nil {
+		if adBlockMatcher != nil {
+			adBlockMatcherNew.bypassEnabled = adBlockMatcher.bypassEnabled
+		}
+		adBlockMatcher = adBlockMatcherNew
+		adBlockMatcherNew = nil
+	}
 }
 
 //export AdBlockMatcherSave

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/cloudveiltech/goproxy"
@@ -32,6 +33,7 @@ type Http2Handler struct {
 	responseBodyMapChunks  map[uint32][][]byte
 	debouncers             map[uint32]func(f func())
 	connectionReadyForData bool
+	rwMutex                *sync.RWMutex
 }
 
 func serveHttp2Filtering(r *http.Request, rawClientTls *tls.Conn, remote *tls.Conn) bool {
@@ -47,6 +49,7 @@ func serveHttp2Filtering(r *http.Request, rawClientTls *tls.Conn, remote *tls.Co
 		responseBodyMapChunks:  make(map[uint32][][]byte),
 		debouncers:             make(map[uint32]func(f func())),
 		connectionReadyForData: false,
+		rwMutex:                &sync.RWMutex{},
 	}
 	go func() {
 		http2Handler.processHttp2Stream(rawClientTls, remote)
@@ -116,14 +119,20 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 		body := fr.Data()
 
 		streamId := f.Header().StreamID
+
+		http2Handler.rwMutex.RLock()
 		lastHttpResponse := http2Handler.lastHttpResponse[streamId]
 		bodyChunks := http2Handler.responseBodyMapChunks[streamId]
+		ctx := http2Handler.proxyCtx[streamId]
+		http2Handler.rwMutex.RUnlock()
+
 		chunk := make([]byte, len(body))
 		copy(chunk, body)
 		bodyChunks = append(bodyChunks, chunk)
-		http2Handler.responseBodyMapChunks[streamId] = bodyChunks
 
-		ctx := http2Handler.proxyCtx[streamId]
+		http2Handler.rwMutex.Lock()
+		http2Handler.responseBodyMapChunks[streamId] = bodyChunks
+		http2Handler.rwMutex.Unlock()
 
 		whitelisted := false
 		if ctx != nil && ctx.UserData != nil {
@@ -135,12 +144,10 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 			if force {
 				log.Print("Force ending stream on timeout")
 			}
+			http2Handler.rwMutex.RLock()
 			lastHttpResponse = http2Handler.lastHttpResponse[streamId]
 			bodyChunks = http2Handler.responseBodyMapChunks[streamId]
-
-			if lastHttpResponse != nil && lastHttpResponse.Request != nil {
-				log.Printf("Process frame data %s", lastHttpResponse.Request.RequestURI)
-			}
+			http2Handler.rwMutex.RUnlock()
 
 			streamEnded := fr.StreamEnded() || force
 			if !whitelisted && lastHttpResponse != nil && !client {
@@ -153,7 +160,10 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 				isContentTypeFilterable = isContentTypeFilterable && (contentLength < MAX_FILTERABLE_LENGTH || isImage)
 				if isContentTypeFilterable && streamEnded {
 					if contentLength > MIN_FILTERABLE_LENGTH {
+
+						http2Handler.rwMutex.RLock()
 						ctx := http2Handler.proxyCtx[streamId]
+						http2Handler.rwMutex.RUnlock()
 						resp := proxy.FilterResponse(lastHttpResponse, ctx)
 
 						if resp != lastHttpResponse { //new response
@@ -172,9 +182,11 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 							buf.ReadFrom(resp.Body)
 							writeFinalData(directFramer, f.Header().StreamID, buf, int(http2Handler.maxFrameSize))
 							//		directFramer.WriteGoAway(streamId, http2.ErrCodeCancel, nil)
+							http2Handler.rwMutex.Lock()
 							delete(http2Handler.lastHttpResponse, streamId)
 							delete(http2Handler.lastHttpRequest, streamId)
 							delete(http2Handler.responseBodyMapChunks, streamId)
+							http2Handler.rwMutex.Unlock()
 							return false
 						}
 					}
@@ -183,14 +195,19 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 				}
 			}
 
+			http2Handler.rwMutex.RLock()
 			header, ok := http2Handler.lastHeadersBlock[streamId]
+			http2Handler.rwMutex.RUnlock()
 			if ok {
 				//	headerFields, _ := http2Handler.lastHeadersMap[streamId]
 				header.EndStream = false
 				//	header.BlockFragment = encodeHeaderFields(headerFields)
 				writeHeaders(directFramer, header, decoder)
+
+				http2Handler.rwMutex.Lock()
 				delete(http2Handler.lastHeadersBlock, streamId)
 				delete(http2Handler.lastHeadersMap, streamId)
+				http2Handler.rwMutex.Unlock()
 			}
 
 			for i, _ := range bodyChunks {
@@ -198,7 +215,9 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 				directFramer.WriteData(streamId, streamEnd, bodyChunks[i])
 			}
 
+			http2Handler.rwMutex.Lock()
 			delete(http2Handler.responseBodyMapChunks, streamId)
+			http2Handler.rwMutex.Unlock()
 			return true
 		}
 
@@ -226,8 +245,11 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 		if client {
 			request := makeHttpRequest(nil, headerFields)
 			var ctx = &goproxy.ProxyCtx{Req: request, Session: atomic.AddInt64(&http2ProxySessionCounter, 1)}
+
+			http2Handler.rwMutex.Lock()
 			http2Handler.lastHttpRequest[f.Header().StreamID] = request
 			http2Handler.proxyCtx[f.Header().StreamID] = ctx
+			http2Handler.rwMutex.Unlock()
 			_, resp := proxy.FilterRequest(request, ctx)
 
 			if resp != nil {
@@ -251,13 +273,17 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 			}
 		} else {
 			response := makeHttpResponse(nil, headerFields)
+
+			http2Handler.rwMutex.Lock()
 			http2Handler.lastHttpResponse[f.Header().StreamID] = response
+			http2Handler.lastHttpResponse[f.Header().StreamID].Request = http2Handler.lastHttpRequest[f.Header().StreamID]
+			http2Handler.rwMutex.Unlock()
+
 			contentType := response.Header.Get("Content-Type")
 			//	contentLength, _ := strconv.Atoi(response.Header.Get("Content-Length"))
 			if !isContentTypeFilterable(contentType) {
 				writeHeadersImmediately = true
 			}
-			http2Handler.lastHttpResponse[f.Header().StreamID].Request = http2Handler.lastHttpRequest[f.Header().StreamID]
 		}
 
 		header := http2.HeadersFrameParam{
@@ -272,8 +298,10 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 		if writeHeadersImmediately {
 			writeHeaders(directFramer, &header, decoder)
 		} else {
+			http2Handler.rwMutex.Lock()
 			http2Handler.lastHeadersMap[f.Header().StreamID] = headerFields
 			http2Handler.lastHeadersBlock[f.Header().StreamID] = &header
+			http2Handler.rwMutex.Unlock()
 		}
 	case http2.FramePriority:
 		fr := f.(*http2.PriorityFrame)
@@ -343,6 +371,7 @@ func decodeAllHeaders(framer *http2.Framer, fr *http2.HeadersFrame, decoder *hpa
 
 	hostIndex := 0
 	pathIndex := 0
+	cookieIndex := 0
 	decoder.SetEmitEnabled(true)
 	decoder.SetMaxStringLength(16 << 20)
 	decoder.SetEmitFunc(func(hf hpack.HeaderField) {
@@ -351,6 +380,8 @@ func decodeAllHeaders(framer *http2.Framer, fr *http2.HeadersFrame, decoder *hpa
 				pathIndex = len(res)
 			} else if hf.Name == ":authority" {
 				hostIndex = len(res)
+			} else if hf.Name == "cookie" {
+				cookieIndex = len(res)
 			}
 			res = append(res, hf)
 		}
@@ -366,6 +397,10 @@ func decodeAllHeaders(framer *http2.Framer, fr *http2.HeadersFrame, decoder *hpa
 	if fr.HeadersEnded() {
 		if hostIndex > 0 || pathIndex > 0 {
 			res[pathIndex].Value = HostPathForceSafeSearch(res[hostIndex].Value, res[pathIndex].Value)
+
+			if cookieIndex > 0 {
+				res[cookieIndex].Value = CookiePatchSafeSearch(res[hostIndex].Value, res[cookieIndex].Value)
+			}
 		}
 
 		return res, buf.Bytes()
@@ -388,6 +423,9 @@ func decodeAllHeaders(framer *http2.Framer, fr *http2.HeadersFrame, decoder *hpa
 
 	if hostIndex > 0 || pathIndex > 0 {
 		res[pathIndex].Value = HostPathForceSafeSearch(res[hostIndex].Value, res[pathIndex].Value)
+		if cookieIndex > 0 {
+			res[cookieIndex].Value = CookiePatchSafeSearch(res[hostIndex].Value, res[cookieIndex].Value)
+		}
 	}
 
 	return res, buf.Bytes()
