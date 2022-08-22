@@ -95,7 +95,7 @@ namespace GoproxyWrapper
             ProxyNativeWrapper.SetProxyLogFile(logFile);
         }
 
-        public void SetDestPortForLocalPort(int localPort, int destPort)
+        public void SetDestPortForLocalPort(int localPort, int destPort, string ip)
         {
             if (BitConverter.IsLittleEndian)
             {
@@ -103,7 +103,7 @@ namespace GoproxyWrapper
                 destPort = (ushort)IPAddress.NetworkToHostOrder((short)destPort);
             }
 
-            ProxyNativeWrapper.SetDestPortForLocalPort(localPort, destPort);
+            ProxyNativeWrapper.SetDestPortForLocalPort(localPort, destPort, GoString.FromString(ip));
         }
 
         public bool IsRunning

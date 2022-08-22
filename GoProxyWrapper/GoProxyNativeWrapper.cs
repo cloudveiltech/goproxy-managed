@@ -144,7 +144,7 @@ namespace GoproxyWrapper
         public static extern void SetOnBeforeResponseCallback(CallbackDelegate func);
 
         [DllImport(Const.DLL_PATH, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl)]
-        public static extern void SetDestPortForLocalPort(int localPort, int destPort);
+        public static extern void SetDestPortForLocalPort(int localPort, int destPort, GoString ip);
     }
 
     [SuppressUnmanagedCodeSecurity]

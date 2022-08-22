@@ -57,6 +57,7 @@ var (
 
 	portWriteLock sync.Mutex
 	portMap       = make(map[int]int)
+	addressMap    = make(map[int]string)
 )
 
 //var fileData []byte
@@ -96,8 +97,6 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 	}
 
 	proxy.NonproxyHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		log.Printf("NonproxyHandler fired.")
-
 		if req.Host == "" {
 			fmt.Fprintln(w, "Cannot handle requests without Host header, e.g., HTTP 1.0")
 			return
@@ -147,12 +146,10 @@ func startHttpServer() *http.Server {
 }
 
 //export SetDestPortForLocalPort
-func SetDestPortForLocalPort(localPort int, destPort int) {
-	if destPort == DEFAULT_HTTPS_PORT {
-		return
-	}
+func SetDestPortForLocalPort(localPort int, destPort int, remoteIp string) {
 	portWriteLock.Lock()
 	defer portWriteLock.Unlock()
+	addressMap[localPort] = remoteIp
 	portMap[localPort] = destPort
 }
 
@@ -237,6 +234,9 @@ func Start() {
 					log.Printf("No categories matched %s", request.URL.String())
 				}
 			}
+			if strings.Contains(request.URL.Host, "drom") {
+				return request, goproxy.NewResponse(request, "text/plain", 401, "Blocked by rules")
+			}
 
 			if strings.Contains(request.URL.Host, "vimeo") {
 				request.Header.Set("cookie", CookiePatchSafeSearch(request.URL.Host, request.Header.Get("cookie")))
@@ -274,7 +274,6 @@ func Start() {
 				}
 			}
 
-			log.Printf("Response filtering %s", ctx.Req.URL.String())
 			// TODO: Call x509.Certificate.Verify
 			// We should be able to glean from that whether or not we do bad SSL page.
 			// A couple of things here:
@@ -328,17 +327,41 @@ func runHttpsListener() {
 
 		go func(c net.Conn) {
 			tlsConn, err := vhost.TLS(c)
-			if err != nil {
+
+			localPort := tlsConn.RemoteAddr().(*net.TCPAddr).Port
+
+			port := DEFAULT_HTTPS_PORT
+			ipString := "127.0.0.1"
+			exists := false
+			attempts := 0
+			for attempts < 3000 {
+				portWriteLock.Lock()
+				port, exists = portMap[localPort]
+				ipString, exists = addressMap[localPort]
+				portWriteLock.Unlock()
+				if !exists {
+					time.Sleep(1 * time.Millisecond)
+					port = DEFAULT_HTTPS_PORT
+				} else {
+					break
+				}
+				attempts = attempts + 1
+			}
+
+			ip := net.ParseIP(ipString)
+			isPrivateNetwork := ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalMulticast()
+			if err != nil && !isPrivateNetwork {
 				log.Printf("Assuming plain http connection - %v", err)
 				chainReqToHttp(tlsConn)
 				return
 			}
 
-			localPort := tlsConn.RemoteAddr().(*net.TCPAddr).Port
-			port, exists := portMap[localPort]
-
-			if !exists {
-				port = DEFAULT_HTTPS_PORT
+			if isPrivateNetwork {
+				if proxy.Verbose {
+					log.Printf("Chain local IP wihout filtering")
+				}
+				chainReqWithoutFiltering(tlsConn, ip, port)
+				return
 			}
 
 			if proxy.Verbose {
@@ -375,10 +398,26 @@ func runHttpsListener() {
 func chainReqToHttp(client net.Conn) {
 	localAddress := client.LocalAddr().(*net.TCPAddr).IP
 
-	log.Printf("chainReqToHttp addr %s %s", localAddress.String(), client.RemoteAddr().(*net.TCPAddr).IP.String())
 	remote, err := net.Dial("tcp", net.JoinHostPort(localAddress.String(), strconv.Itoa(int(config.portHttp))))
 	if err != nil {
 		log.Printf("chainReqToHttp error connect %s", err)
+		return
+	}
+
+	defer remote.Close()
+	defer client.Close()
+
+	go func() {
+		nonBlockingCopy(remote, client)
+	}()
+
+	nonBlockingCopy(client, remote)
+}
+
+func chainReqWithoutFiltering(client net.Conn, ip net.IP, port int) {
+	remote, err := net.Dial("tcp", net.JoinHostPort(ip.String(), strconv.Itoa(port)))
+	if err != nil {
+		log.Printf("chainReqWithoutFiltering error connect %s", err)
 		return
 	}
 
@@ -504,9 +543,6 @@ func main() {
 }
 
 func test() {
-
-	t := net.JoinHostPort("2605:b100:71c:a3f4:64ef:147b:f573:5ef5", "15400")
-	log.Printf("%s", t)
 	log.Printf("main: starting HTTP server")
 
 	Init(14500, 14501, "rootCertificate.pem", "rootPrivateKey.pem")
