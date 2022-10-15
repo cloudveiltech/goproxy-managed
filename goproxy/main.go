@@ -233,14 +233,13 @@ func Start() {
 				} else {
 					log.Printf("No categories matched %s", request.URL.String())
 				}
-			}
-			if strings.Contains(request.URL.Host, "drom") {
-				return request, goproxy.NewResponse(request, "text/plain", 401, "Blocked by rules")
+
 			}
 
 			if strings.Contains(request.URL.Host, "vimeo") {
 				request.Header.Set("cookie", CookiePatchSafeSearch(request.URL.Host, request.Header.Get("cookie")))
 			}
+
 			request.URL.RawPath = HostPathForceSafeSearch(request.URL.Host, request.URL.RawPath)
 			return request, response
 		})
@@ -251,6 +250,11 @@ func Start() {
 
 			var isVerified bool = true
 
+			contentType := response.Header.Get("Content-Type")
+			isContentTypeFilterable := isContentTypeFilterable(contentType)
+			if !isContentTypeFilterable {
+				return resp
+			}
 			if response != nil && response.TLS != nil {
 				var err error
 				isVerified, err = verifyCerts(ctx.Req.URL.Host, response.TLS.PeerCertificates)
@@ -327,7 +331,6 @@ func runHttpsListener() {
 
 		go func(c net.Conn) {
 			tlsConn, err := vhost.TLS(c)
-
 			localPort := tlsConn.RemoteAddr().(*net.TCPAddr).Port
 
 			port := DEFAULT_HTTPS_PORT
