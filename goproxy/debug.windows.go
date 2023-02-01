@@ -1,3 +1,4 @@
+//go:build windows
 // +build windows
 
 package main
@@ -28,7 +29,7 @@ func setStdHandle(stdhandle int32, handle syscall.Handle) error {
 func redirectStderr(f *os.File) {
 	err := setStdHandle(syscall.STD_OUTPUT_HANDLE, syscall.Handle(f.Fd()))
 	if err != nil {
-		log.Fatalf("Failed to redirect stderr to file: %v", err)
+		log.Printf("Failed to redirect stderr to file: %v", err)
 	}
 	// SetStdHandle does not affect prior references to stderr
 	os.Stderr = f

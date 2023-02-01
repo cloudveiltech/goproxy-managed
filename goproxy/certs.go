@@ -20,25 +20,27 @@ import (
 	"github.com/cloudveiltech/goproxy"
 )
 
-var defaultTLSConfig = &tls.Config{
-	Renegotiation:      tls.RenegotiateFreelyAsClient,
-	InsecureSkipVerify: true, // We should be able to set this to false, and then check verified chains against peer certificates to see if we have a trusted chain or not.
-	VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-		// for i := 0; i < len(rawCerts); i++ {
-		// 	cert, err := x509.ParseCertificate(rawCerts[i])
+func getDefaultTlsConfig() *tls.Config {
+	return &tls.Config{
+		Renegotiation:      tls.RenegotiateFreelyAsClient,
+		InsecureSkipVerify: true, // We should be able to set this to false, and then check verified chains against peer certificates to see if we have a trusted chain or not.
+		VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+			// for i := 0; i < len(rawCerts); i++ {
+			// 	cert, err := x509.ParseCertificate(rawCerts[i])
 
-		// 	if err != nil {
-		// 		fmt.Println("Error: ", err)
-		// 		continue
-		// 	}
+			// 	if err != nil {
+			// 		fmt.Println("Error: ", err)
+			// 		continue
+			// 	}
 
-		// 	hash := sha1.Sum(rawCerts[i])
-		// 	fmt.Println("Cert data: ")
-		// 	fmt.Println(hash, cert.DNSNames, cert.Subject, cert.Issuer)
-		// }
+			// 	hash := sha1.Sum(rawCerts[i])
+			// 	fmt.Println("Cert data: ")
+			// 	fmt.Println(hash, cert.DNSNames, cert.Subject, cert.Issuer)
+			// }
 
-		return nil
-	},
+			return nil
+		},
+	}
 }
 
 var (
@@ -50,13 +52,11 @@ func loadAndSetCa(certFile, keyFile string) {
 	cert, err := ioutil.ReadFile(certFile)
 	if err != nil {
 		log.Printf("Can't read cert file")
-		log.Fatal(err)
 		return
 	}
 	key, err := ioutil.ReadFile(keyFile)
 	if err != nil {
 		log.Printf("Can't read cert key file")
-		log.Fatal(err)
 		return
 	}
 
@@ -69,12 +69,10 @@ func setCA(caCert, caKey []byte) error {
 	goproxyCa, err := tls.X509KeyPair(caCert, caKey)
 	if err != nil {
 		log.Printf("Can't load cert/key file")
-		log.Fatal(err)
 		return err
 	}
 	if goproxyCa.Leaf, err = x509.ParseCertificate(goproxyCa.Certificate[0]); err != nil {
 		log.Printf("Can't parse cert key/file")
-		log.Fatal(err)
 		return err
 	}
 	goproxy.GoproxyCa = goproxyCa
@@ -82,6 +80,8 @@ func setCA(caCert, caKey []byte) error {
 	goproxy.MitmConnect = &goproxy.ConnectAction{Action: goproxy.ConnectMitm, TLSConfig: goproxy.TLSConfigFromCA(&goproxyCa)}
 	goproxy.HTTPMitmConnect = &goproxy.ConnectAction{Action: goproxy.ConnectHTTPMitm, TLSConfig: goproxy.TLSConfigFromCA(&goproxyCa)}
 	goproxy.RejectConnect = &goproxy.ConnectAction{Action: goproxy.ConnectReject, TLSConfig: goproxy.TLSConfigFromCA(&goproxyCa)}
+	rootCert = goproxyCa
+
 	return nil
 }
 

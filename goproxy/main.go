@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"runtime/debug"
+	"sync"
 	"unsafe"
 )
 
@@ -26,8 +27,13 @@ var logFilePath = ""
 var logFileHandle *os.File
 var isImageFilteringEnabled = false
 
+var mainInteropSyncMutex sync.Mutex
+
 //export AddCertException
 func AddCertException(thumbPrintC *C.char) {
+	mainInteropSyncMutex.Lock()
+	defer mainInteropSyncMutex.Unlock()
+
 	thumbPrint := C.GoString(thumbPrintC)
 	_, ok := certsException[thumbPrint]
 	if !ok {
@@ -53,6 +59,9 @@ func checkPortAvailable(port int16) bool {
 
 //export SetProxyLogFile
 func SetProxyLogFile(logFile *C.char) {
+	mainInteropSyncMutex.Lock()
+	defer mainInteropSyncMutex.Unlock()
+
 	logFilePath = C.GoString(logFile)
 	setProxyLogFileInternal(logFilePath)
 }
@@ -105,11 +114,17 @@ func monitorLogFileSize() {
 
 //export AdBlockMatcherSetBlacklistCallback
 func AdBlockMatcherSetBlacklistCallback(callback unsafe.Pointer) {
+	mainInteropSyncMutex.Lock()
+	defer mainInteropSyncMutex.Unlock()
+
 	adBlockBlacklistCallback = callback
 }
 
 //export StartGoServer
 func StartGoServer(portHttp, portHttps, portConfigurationServer int16, certFileC *C.char, keyFileC *C.char, bannedImageFileC *C.char) int16 {
+	mainInteropSyncMutex.Lock()
+	defer mainInteropSyncMutex.Unlock()
+
 	debug.SetTraceback("all")
 	debug.SetPanicOnFault(true)
 	initIpUtil()
@@ -143,17 +158,26 @@ func StartGoServer(portHttp, portHttps, portConfigurationServer int16, certFileC
 
 //export SetImageFilteringEnabled
 func SetImageFilteringEnabled(enabled bool) {
+	mainInteropSyncMutex.Lock()
+	defer mainInteropSyncMutex.Unlock()
+
 	log.Printf("Setting Image filtering to: %v", enabled)
 	isImageFilteringEnabled = enabled
 }
 
 //export StopGoServer
 func StopGoServer() {
+	mainInteropSyncMutex.Lock()
+	defer mainInteropSyncMutex.Unlock()
+
 	stopGoProxyServer()
 }
 
 //export IsIpPrivate
 func IsIpPrivate(ipStringC *C.char) int16 {
+	mainInteropSyncMutex.Lock()
+	defer mainInteropSyncMutex.Unlock()
+
 	ipString := C.GoString(ipStringC)
 	ip := net.ParseIP(ipString)
 	if ip == nil {

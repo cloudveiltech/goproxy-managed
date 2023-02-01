@@ -133,7 +133,7 @@ func runHttpsListener() {
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", configuredPortHttps))
 
 	if err != nil {
-		log.Fatalf("Error listening for https connections - %v", err)
+		log.Printf("Error listening for https connections - %v", err)
 		return
 	}
 
@@ -263,6 +263,10 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 
 					log.Printf("Page %s blocked by url, category %s", url, *category)
 
+					if strings.Contains(r.URL.Host, "vimeo") {
+						r.Header.Set("cookie", CookiePatchSafeSearch(r.URL.Host, r.Header.Get("cookie")))
+					}
+
 					r.URL.RawPath = HostPathForceSafeSearch(r.URL.Host, r.URL.RawPath)
 					return r, goproxy.NewResponse(r,
 						goproxy.ContentTypeHtml, http.StatusForbidden,
@@ -347,7 +351,7 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 			return resp
 		})
 
-	runConfigurationServerListener()
+	go runConfigurationServerListener()
 	go runHttpsListener()
 
 	if proxy.Verbose {
@@ -357,8 +361,14 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 
 func stopGoProxyServer() {
 	if server != nil {
-		context, _ := context.WithTimeout(context.Background(), 1*time.Second)
+		context, _ := context.WithTimeout(context.Background(), 1*time.Millisecond)
 		server.Shutdown(context)
 		server = nil
+	}
+
+	if configServer != nil {
+		context, _ := context.WithTimeout(context.Background(), 1*time.Millisecond)
+		configServer.Shutdown(context)
+		configServer = nil
 	}
 }

@@ -71,22 +71,22 @@ type AdBlockMatcher struct {
 }
 
 func CreateMatcher() *AdBlockMatcher {
-	adBlockMatcher = &AdBlockMatcher{
+	newMatcher := &AdBlockMatcher{
 		RulesCnt:             0,
 		defaultBlockPageTags: make(map[string]string),
 	}
 
-	return adBlockMatcher
+	return newMatcher
 }
 
 func (am *AdBlockMatcher) addMatcher(category string, listType int) {
 	matcher := adblock.NewMatcher()
 	var categoryMatcher *MatcherCategory
-	matcherCategories := adBlockMatcher.BlackListMatcherCategories
+	matcherCategories := am.BlackListMatcherCategories
 	if listType == BypassList {
-		matcherCategories = adBlockMatcher.BypassMatcherCategories
+		matcherCategories = am.BypassMatcherCategories
 	} else if listType == Whitelist {
-		matcherCategories = adBlockMatcher.WhiteListMatcherCategories
+		matcherCategories = am.WhiteListMatcherCategories
 	}
 
 	for _, element := range matcherCategories {
@@ -113,8 +113,8 @@ func (am *AdBlockMatcher) addMatcher(category string, listType int) {
 	}
 
 	categoryMatcher.Matchers = append(categoryMatcher.Matchers, matcher)
-	adBlockMatcher.lastMatcher = matcher
-	adBlockMatcher.lastCategory = categoryMatcher
+	am.lastMatcher = matcher
+	am.lastCategory = categoryMatcher
 }
 
 func (am *AdBlockMatcher) GetBlockPage(blockedUrl, category string, isRelaxedPolicy bool) string {
@@ -178,6 +178,10 @@ func (am *AdBlockMatcher) TestUrlBlocked(url string, host string, referer string
 	if am == nil || am.RulesCnt == 0 {
 		return nil, Included, false
 	}
+
+	url = strings.ToLower(url)
+	host = strings.ToLower(host)
+	referer = strings.ToLower(referer)
 
 	res1, res2 := am.matchRulesCategories(am.WhiteListMatcherCategories, url, host, referer)
 	if res1 != nil {
@@ -322,7 +326,7 @@ func isNonLetterAndDigitRune(r rune) bool {
 
 func (am *AdBlockMatcher) AddBlockedPhrase(phrase string, category string) {
 	var phraseCategory *PhraseCategory = nil
-	for _, element := range adBlockMatcher.PhraseCategories {
+	for _, element := range am.PhraseCategories {
 		if element.Category == category {
 			phraseCategory = element
 			break
@@ -407,14 +411,14 @@ func LoadMatcherFromFile(filePath string) *AdBlockMatcher {
 
 	decoder := gob.NewDecoder(stream)
 
-	adBlockMatcher = &AdBlockMatcher{
+	adBlockMatcherLoaded := &AdBlockMatcher{
 		RulesCnt: 0,
 	}
-	err = decoder.Decode(&adBlockMatcher)
+	err = decoder.Decode(&adBlockMatcherLoaded)
 	if err != nil {
 		log.Printf("Decoder error %s", err)
 	}
-	return adBlockMatcher
+	return adBlockMatcherLoaded
 }
 
 func (am *AdBlockMatcher) EnableBypass() {

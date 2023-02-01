@@ -24,6 +24,8 @@ func (am *AdBlockMatcher) ParseRulesZipArchive(filePath string) {
 }
 
 func (am *AdBlockMatcher) AddRule(rule string, category string, listType int) {
+	rule = strings.ToLower(rule)
+
 	r, e := adblock.ParseRule(rule)
 
 	if e != nil {

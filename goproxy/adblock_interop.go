@@ -8,6 +8,8 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/aymerick/raymond"
@@ -16,33 +18,42 @@ import (
 var adBlockBlacklistCallback unsafe.Pointer
 
 var adBlockMatchers map[int32]*AdBlockMatcher
+var adBlockInteropSyncMutex sync.Mutex
+
+var newAdBlockMatcher *AdBlockMatcher
 
 //export AdBlockMatcherInitialize
 func AdBlockMatcherInitialize() {
-	var oldMatcher *AdBlockMatcher = nil
+	adBlockInteropSyncMutex.Lock()
+	defer adBlockInteropSyncMutex.Unlock()
+
+	newAdBlockMatcher = CreateMatcher()
 
 	if adBlockMatcher != nil {
-		oldMatcher = adBlockMatcher
-	}
-
-	adBlockMatcher = CreateMatcher()
-
-	if oldMatcher != nil {
-		adBlockMatcher.bypassEnabled = oldMatcher.bypassEnabled
+		newAdBlockMatcher.bypassEnabled = adBlockMatcher.bypassEnabled
 	}
 }
 
 //export AdBlockMatcherBuild
 func AdBlockMatcherBuild() {
-	if adBlockMatcher != nil {
-		adBlockMatcher.Build()
+	adBlockInteropSyncMutex.Lock()
+	defer adBlockInteropSyncMutex.Unlock()
+
+	if newAdBlockMatcher != nil {
+		newAdBlockMatcher.Build()
+
+		adBlockMatcher = newAdBlockMatcher
+		newAdBlockMatcher = nil
 	}
 }
 
 //export AdBlockMatcherParseRuleFile
 func AdBlockMatcherParseRuleFile(fileNameC *C.char, categoryIdC *C.char, listType int32) bool {
-	fileName := C.GoString(fileNameC)
+	adBlockInteropSyncMutex.Lock()
+	defer adBlockInteropSyncMutex.Unlock()
+
 	categoryId := C.GoString(categoryIdC)
+	fileName := C.GoString(fileNameC)
 
 	fileHandle, err := os.Open(fileName)
 	if err != nil {
@@ -50,38 +61,52 @@ func AdBlockMatcherParseRuleFile(fileNameC *C.char, categoryIdC *C.char, listTyp
 	}
 	defer fileHandle.Close()
 
-	scanner := bufio.NewScanner(fileHandle)
+	if newAdBlockMatcher == nil {
+		return false
+	}
 
+	scanner := bufio.NewScanner(fileHandle)
 	log.Printf("Parsing category %s file %s", categoryId, fileName)
 
-	adBlockMatcher.addMatcher(categoryId, int(listType))
+	newAdBlockMatcher.addMatcher(categoryId, int(listType))
 
 	if listType == TextTrigger {
-		adBlockMatcher.addPhrasesFromScanner(scanner, categoryId)
+		newAdBlockMatcher.addPhrasesFromScanner(scanner, categoryId)
 	} else {
-		adBlockMatcher.addRulesFromScanner(scanner, categoryId, int(listType))
+		newAdBlockMatcher.addRulesFromScanner(scanner, categoryId, int(listType))
 	}
+	time.Sleep(time.Millisecond * 10)
 	return true
 }
 
 //export AdBlockMatcherSetBlockedPageContent
 func AdBlockMatcherSetBlockedPageContent(contentBlockPageC, contentCertPageC *C.char) {
-	blockPagePath := C.GoString(contentBlockPageC)
-	adBlockMatcher.BlockPageTemplate = parseTemplate(blockPagePath)
+	adBlockInteropSyncMutex.Lock()
+	defer adBlockInteropSyncMutex.Unlock()
 
-	certPagePath := C.GoString(contentCertPageC)
-	adBlockMatcher.BlockCertTemplate = parseTemplate(certPagePath)
+	if newAdBlockMatcher != nil {
+		blockPagePath := C.GoString(contentBlockPageC)
+		newAdBlockMatcher.BlockPageTemplate = parseTemplate(blockPagePath)
+
+		certPagePath := C.GoString(contentCertPageC)
+		newAdBlockMatcher.BlockCertTemplate = parseTemplate(certPagePath)
+	}
 }
 
 //export AdBlockMatcherSetBlockPageContextTag
 func AdBlockMatcherSetBlockPageContextTag(keyC, valueC *C.char) {
-	key := C.GoString(keyC)
-	value := C.GoString(valueC)
+	adBlockInteropSyncMutex.Lock()
+	defer adBlockInteropSyncMutex.Unlock()
 
-	if len(value) > 0 {
-		adBlockMatcher.defaultBlockPageTags[key] = value
-	} else {
-		delete(adBlockMatcher.defaultBlockPageTags, key)
+	if newAdBlockMatcher != nil {
+		key := C.GoString(keyC)
+		value := C.GoString(valueC)
+
+		if len(value) > 0 {
+			newAdBlockMatcher.defaultBlockPageTags[key] = value
+		} else {
+			delete(newAdBlockMatcher.defaultBlockPageTags, key)
+		}
 	}
 }
 
@@ -109,16 +134,25 @@ func parseTemplate(pagePath string) *raymond.Template {
 
 //export AdBlockMatcherSave
 func AdBlockMatcherSave(fileName string) {
+	adBlockInteropSyncMutex.Lock()
+	defer adBlockInteropSyncMutex.Unlock()
+
 	adBlockMatcher.SaveToFile(fileName)
 }
 
 //export AdBlockMatcherLoad
 func AdBlockMatcherLoad(fileName string) {
+	adBlockInteropSyncMutex.Lock()
+	defer adBlockInteropSyncMutex.Unlock()
+
 	adBlockMatcher = LoadMatcherFromFile(fileName)
 }
 
 //export AdBlockMatcherEnableBypass
 func AdBlockMatcherEnableBypass() {
+	adBlockInteropSyncMutex.Lock()
+	defer adBlockInteropSyncMutex.Unlock()
+
 	if adBlockMatcher != nil {
 		adBlockMatcher.bypassEnabled = true
 	}
@@ -126,6 +160,9 @@ func AdBlockMatcherEnableBypass() {
 
 //export AdBlockMatcherDisableBypass
 func AdBlockMatcherDisableBypass() {
+	adBlockInteropSyncMutex.Lock()
+	defer adBlockInteropSyncMutex.Unlock()
+
 	if adBlockMatcher != nil {
 		adBlockMatcher.bypassEnabled = false
 	}
@@ -133,6 +170,9 @@ func AdBlockMatcherDisableBypass() {
 
 //export AdBlockMatcherGetBypassEnabled
 func AdBlockMatcherGetBypassEnabled() bool {
+	adBlockInteropSyncMutex.Lock()
+	defer adBlockInteropSyncMutex.Unlock()
+
 	if adBlockMatcher != nil {
 		return adBlockMatcher.bypassEnabled
 	} else {
@@ -142,6 +182,9 @@ func AdBlockMatcherGetBypassEnabled() bool {
 
 //export AdBlockMatcherIsDomainWhitelisted
 func AdBlockMatcherIsDomainWhitelisted(hostC *C.char) bool {
+	adBlockInteropSyncMutex.Lock()
+	defer adBlockInteropSyncMutex.Unlock()
+
 	if adBlockMatcher != nil {
 		host := C.GoString(hostC)
 		return adBlockMatcher.IsDomainWhitelisted(host)
@@ -152,6 +195,9 @@ func AdBlockMatcherIsDomainWhitelisted(hostC *C.char) bool {
 
 //export AdBlockMatcherGetWhitelistedDomains
 func AdBlockMatcherGetWhitelistedDomains() *C.char {
+	adBlockInteropSyncMutex.Lock()
+	defer adBlockInteropSyncMutex.Unlock()
+
 	if adBlockMatcher != nil {
 		domains := adBlockMatcher.GetWhitelistedDomains()
 		res := strings.Join(domains, ";")

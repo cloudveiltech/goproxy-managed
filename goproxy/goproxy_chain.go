@@ -26,19 +26,21 @@ import (
 )
 
 func runConfigurationServerListener() {
-	go func() {
+	log.Printf("Starting configuration server %d", configuredConfigurationServerPort)
+	cert, _ := signHost(rootCert, []string{"127.0.0.1", "localhost"})
+	config := getDefaultTlsConfig()
+	config.Certificates = append(config.Certificates, *cert)
+	config.NextProtos = []string{"http/1.1"}
 
-		cert, _ := signHost(goproxy.GoproxyCa, []string{"127.0.0.1"})
-		config := defaultTLSConfig
-		config.Certificates = append(config.Certificates, *cert)
-		config.NextProtos = []string{"http/1.1"}
+	configServer = &http.Server{Addr: fmt.Sprintf("127.0.0.1:%d", configuredConfigurationServerPort)}
+	configServer.Handler = serverHandler{}
+	configServer.TLSConfig = config
 
-		srv := &http.Server{Addr: fmt.Sprintf("127.0.0.1:%d", configuredConfigurationServerPort)}
-		srv.Handler = serverHandler{}
-		srv.TLSConfig = config
-
-		srv.ListenAndServeTLS("", "")
-	}()
+	if err := configServer.ListenAndServeTLS("", ""); err != nil {
+		// cannot panic, because this probably is an intentional close
+		log.Printf("configServer: ListenAndServe() error: %s", err)
+		configServer = nil
+	}
 }
 
 type serverHandler struct {
@@ -99,10 +101,11 @@ func signHost(ca tls.Certificate, hosts []string) (cert *tls.Certificate, err er
 	if x509ca, err = x509.ParseCertificate(ca.Certificate[0]); err != nil {
 		return
 	}
-	start := time.Unix(0, 0)
+
 	end, err := time.Parse("2006-01-02", "2049-12-31")
 	if err != nil {
-		panic(err)
+		log.Print("Can't parse date")
+		return
 	}
 
 	serial := big.NewInt(rand.Int63())
@@ -113,7 +116,7 @@ func signHost(ca tls.Certificate, hosts []string) (cert *tls.Certificate, err er
 		Subject: pkix.Name{
 			Organization: []string{"GoProxy untrusted MITM proxy Inc"},
 		},
-		NotBefore: start,
+		NotBefore: time.Unix(0, 0),
 		NotAfter:  end,
 
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
