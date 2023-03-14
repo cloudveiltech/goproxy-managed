@@ -18,7 +18,7 @@ const (
 
 const MAX_RULES_PER_MATCHER = 1000
 const MAX_CONTENT_SIZE_SCAN = 200 * 1024 //200kb max to scan
-var adblockMatcher *AdBlockMatcher
+var adBlockMatcher *AdBlockMatcher
 
 var defaultBlockPageContent = "%url% is blocked. Category %category%. Reason %reason%"
 
@@ -48,18 +48,33 @@ type AdBlockMatcher struct {
 }
 
 func CreateMatcher() *AdBlockMatcher {
-	adblockMatcher = &AdBlockMatcher{
+	adblockMatcherNew := &AdBlockMatcher{
 		RulesCnt:         0,
 		BlockPageContent: defaultBlockPageContent,
 	}
 
-	return adblockMatcher
+	return adblockMatcherNew
+}
+
+func (am *AdBlockMatcher) IsDomainWhitelisted(host string) bool {
+	if adBlockMatcher == nil {
+		return false
+	}
+	categories, matchTypes := adBlockMatcher.TestUrlBlockedWithMatcherCategories("https://"+host, host, "")
+	if len(categories) > 0 {
+		for index, category := range categories {
+			if category.ListType == Whitelist || matchTypes[index] == Excluded {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (am *AdBlockMatcher) addMatcher(categoryId int32, listType int32, bypass bool) {
 	matcher := adblock.NewMatcher()
 	var categoryMatcher *MatcherCategory
-	for _, element := range adblockMatcher.MatcherCategories {
+	for _, element := range am.MatcherCategories {
 		if element.CategoryId == categoryId {
 			categoryMatcher = element
 			break
@@ -81,8 +96,8 @@ func (am *AdBlockMatcher) addMatcher(categoryId int32, listType int32, bypass bo
 	}
 
 	categoryMatcher.Matchers = append(categoryMatcher.Matchers, matcher)
-	adblockMatcher.lastMatcher = matcher
-	adblockMatcher.lastCategory = categoryMatcher
+	am.lastMatcher = matcher
+	am.lastCategory = categoryMatcher
 }
 
 func (am *AdBlockMatcher) GetBlockPage(url string, category string, reason string) string {
@@ -210,7 +225,7 @@ func (am *AdBlockMatcher) TestContainsForbiddenPhrases(str []byte) *string {
 
 func (am *AdBlockMatcher) AddBlockedPhrase(phrase string, category string) {
 	var phraseCategory *PhraseCategory = nil
-	for _, element := range adblockMatcher.PhraseCategories {
+	for _, element := range am.PhraseCategories {
 		if element.Category == category {
 			phraseCategory = element
 			break
@@ -288,14 +303,14 @@ func LoadMatcherFromFile(filePath string) *AdBlockMatcher {
 
 	decoder := gob.NewDecoder(stream)
 
-	adblockMatcher = &AdBlockMatcher{
+	adblockMatcherNew := &AdBlockMatcher{
 		RulesCnt: 0,
 	}
-	err = decoder.Decode(&adblockMatcher)
+	err = decoder.Decode(&adblockMatcherNew)
 	if err != nil {
 		log.Printf("Decoder error %s", err)
 	}
-	return adblockMatcher
+	return adblockMatcherNew
 }
 
 func (am *AdBlockMatcher) EnableBypass() {

@@ -11,7 +11,6 @@ import (
 	"unsafe"
 )
 
-var adBlockMatcher *AdBlockMatcher = nil
 var adBlockMatcherNew *AdBlockMatcher = nil
 
 var onWhitelistCallback unsafe.Pointer

@@ -42,7 +42,7 @@ func ResponseGetBody(id int64, res *[]byte) bool {
 	buf.ReadFrom(response.Body)
 
 	result := buf.Bytes()
-	if response.Uncompressed || !adblockMatcher.TestContentTypeIsFiltrable(response.Header.Get("Content-Type")) {
+	if response.Uncompressed || !adBlockMatcher.TestContentTypeIsFiltrable(response.Header.Get("Content-Type")) {
 		*res = result
 	} else {
 		*res = decodeResponseCompression(response.Header.Get("Content-Encoding"), result)

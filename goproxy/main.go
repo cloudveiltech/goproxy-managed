@@ -55,12 +55,46 @@ var (
 	beforeRequestCallback  unsafe.Pointer
 	beforeResponseCallback unsafe.Pointer
 
-	portWriteLock sync.Mutex
+	portWriteLock sync.RWMutex
 	portMap       = make(map[int]int)
 	addressMap    = make(map[int]string)
 )
 
 //var fileData []byte
+
+type HttpsHandler func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string)
+
+func (f HttpsHandler) HandleConnect(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
+	return f(host, ctx)
+}
+
+var handleConnectFunc HttpsHandler = func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
+	hostWithoutPort := host
+	parts := strings.Split(hostWithoutPort, ":")
+	if len(parts) > 1 {
+		hostWithoutPort = strings.ReplaceAll(hostWithoutPort, ":"+parts[len(parts)-1], "")
+	}
+
+	if adBlockMatcher.IsDomainWhitelisted(hostWithoutPort) {
+		log.Printf("Whitelisting host %s", host)
+		return goproxy.OkConnect, host
+	}
+
+	ips, err := net.LookupIP(hostWithoutPort)
+	if err == nil {
+		for _, ip := range ips {
+			isPrivateNetwork := ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalMulticast()
+			if isPrivateNetwork {
+				log.Printf("Private network host %s", host)
+				return goproxy.OkConnect, host
+			}
+		}
+	} else {
+		log.Printf("Host lookup err: %v", err)
+	}
+
+	return goproxy.MitmConnect, host
+}
 
 const proxyNextActionKey string = "__proxyNextAction__"
 const DEFAULT_HTTPS_PORT = 443
@@ -120,7 +154,9 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 			Renegotiation:            tls.RenegotiateFreelyAsClient,
 		},
 	}
-	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
+
+	proxy.OnRequest().HandleConnect(handleConnectFunc)
+
 	config.portHttp = portHttp
 	config.portHttps = portHttps
 
@@ -188,6 +224,15 @@ func Start() {
 
 			if response != nil {
 				return request, response
+			}
+			ip := net.ParseIP(r.RemoteAddr)
+			if ip != nil {
+				isPrivateNetwork := ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalMulticast()
+				if isPrivateNetwork {
+					userData["blocked"] = false
+					log.Printf("Http whiltelisting private ip")
+					return request, nil
+				}
 			}
 
 			// Now run our matching engine.
@@ -338,13 +383,14 @@ func runHttpsListener() {
 			exists := false
 			attempts := 0
 			for attempts < 3000 {
-				portWriteLock.Lock()
+				portWriteLock.RLock()
 				port, exists = portMap[localPort]
 				ipString, exists = addressMap[localPort]
-				portWriteLock.Unlock()
+				portWriteLock.RUnlock()
 				if !exists {
 					time.Sleep(1 * time.Millisecond)
 					port = DEFAULT_HTTPS_PORT
+					log.Printf("Waiting for port data")
 				} else {
 					break
 				}
@@ -360,9 +406,9 @@ func runHttpsListener() {
 			}
 
 			if isPrivateNetwork {
-				if proxy.Verbose {
-					log.Printf("Chain local IP wihout filtering")
-				}
+				//if proxy.Verbose {
+				log.Printf("Chain local IP wihout filtering")
+				//}
 				chainReqWithoutFiltering(tlsConn, ip, port)
 				return
 			}
@@ -428,15 +474,13 @@ func chainReqWithoutFiltering(client net.Conn, ip net.IP, port int) {
 	defer client.Close()
 
 	go func() {
-		nonBlockingCopy(remote, client)
+		io.Copy(remote, client)
 	}()
 
-	nonBlockingCopy(client, remote)
+	io.Copy(client, remote)
 }
 
 func nonBlockingCopy(from, to net.Conn) {
-	log.Printf("Non blocking copy fired")
-
 	buf := make([]byte, 10240)
 	for {
 		from.SetDeadline(time.Now().Add(time.Minute * 10))
