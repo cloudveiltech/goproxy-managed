@@ -406,6 +406,7 @@ func runHttpsListener() {
 			}
 
 			if isPrivateNetwork {
+
 				//if proxy.Verbose {
 				log.Printf("Chain local IP wihout filtering")
 				//}

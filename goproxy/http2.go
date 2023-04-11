@@ -241,14 +241,23 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 		if len(headerFields) == 0 {
 			log.Printf("Error parsing headers")
 		}
-		writeHeadersImmediately := client || fr.StreamEnded()
+		whitelisted := false
+
+		streamId := f.Header().StreamID
+		ctx := http2Handler.proxyCtx[streamId]
+		if ctx != nil && ctx.UserData != nil {
+			blocked, exists := ctx.UserData.(map[string]interface{})["blocked"]
+			whitelisted = exists && !(blocked.(bool))
+		}
+
+		writeHeadersImmediately := whitelisted || client || fr.StreamEnded()
 		if client {
 			request := makeHttpRequest(nil, headerFields)
 			var ctx = &goproxy.ProxyCtx{Req: request, Session: atomic.AddInt64(&http2ProxySessionCounter, 1)}
 
 			http2Handler.rwMutex.Lock()
-			http2Handler.lastHttpRequest[f.Header().StreamID] = request
-			http2Handler.proxyCtx[f.Header().StreamID] = ctx
+			http2Handler.lastHttpRequest[streamId] = request
+			http2Handler.proxyCtx[streamId] = ctx
 			http2Handler.rwMutex.Unlock()
 			_, resp := proxy.FilterRequest(request, ctx)
 
@@ -257,7 +266,7 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 					reverseFramer.WriteSettings()
 				}
 				writeHeaders(reverseFramer, &http2.HeadersFrameParam{
-					StreamID:      f.Header().StreamID,
+					StreamID:      streamId,
 					BlockFragment: encodeHeaders(resp),
 					EndStream:     false,
 					EndHeaders:    true,
@@ -267,16 +276,16 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 				buf := new(bytes.Buffer)
 				buf.ReadFrom(resp.Body)
 
-				writeFinalData(reverseFramer, f.Header().StreamID, buf, int(http2Handler.maxFrameSize))
-				reverseFramer.WriteGoAway(f.Header().StreamID, http2.ErrCodeRefusedStream, nil)
+				writeFinalData(reverseFramer, streamId, buf, int(http2Handler.maxFrameSize))
+				reverseFramer.WriteGoAway(streamId, http2.ErrCodeRefusedStream, nil)
 				return false
 			}
 		} else {
 			response := makeHttpResponse(nil, headerFields)
 
 			http2Handler.rwMutex.Lock()
-			http2Handler.lastHttpResponse[f.Header().StreamID] = response
-			http2Handler.lastHttpResponse[f.Header().StreamID].Request = http2Handler.lastHttpRequest[f.Header().StreamID]
+			http2Handler.lastHttpResponse[streamId] = response
+			http2Handler.lastHttpResponse[streamId].Request = http2Handler.lastHttpRequest[streamId]
 			http2Handler.rwMutex.Unlock()
 
 			contentType := response.Header.Get("Content-Type")
@@ -287,7 +296,7 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 		}
 
 		header := http2.HeadersFrameParam{
-			StreamID:      f.Header().StreamID,
+			StreamID:      streamId,
 			BlockFragment: encodeHeaderFields(headerFields),
 			EndStream:     fr.StreamEnded(),
 			EndHeaders:    fr.HeadersEnded(),
