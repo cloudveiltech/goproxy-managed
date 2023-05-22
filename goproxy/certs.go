@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/tls"
 	"crypto/x509"
 	"io/ioutil"
 	"log"
@@ -9,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cloudveiltech/goproxy"
+	tls "github.com/refraction-networking/utls"
 )
 
 var (

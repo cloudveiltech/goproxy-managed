@@ -23,7 +23,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/tls"
 	"fmt"
 	"io"
 	"log"
@@ -135,7 +134,6 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 			fmt.Fprintln(w, "Cannot handle requests without Host header, e.g., HTTP 1.0")
 			return
 		}
-
 		req.URL.Scheme = "http"
 		req.URL.Host = req.Host
 		proxy.ServeHTTP(w, req)
@@ -146,13 +144,6 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 		MaxIdleConns:          1000,
 		IdleConnTimeout:       time.Minute * 10,
 		ResponseHeaderTimeout: time.Minute * 10,
-		TLSClientConfig: &tls.Config{
-			NextProtos:               []string{"http/1.1"},
-			InsecureSkipVerify:       true,
-			CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
-			PreferServerCipherSuites: true,
-			Renegotiation:            tls.RenegotiateFreelyAsClient,
-		},
 	}
 
 	proxy.OnRequest().HandleConnect(handleConnectFunc)
@@ -390,7 +381,7 @@ func runHttpsListener() {
 				if !exists {
 					time.Sleep(1 * time.Millisecond)
 					port = DEFAULT_HTTPS_PORT
-					log.Printf("Waiting for port data")
+					//	log.Printf("Waiting for port data")
 				} else {
 					break
 				}
@@ -406,11 +397,10 @@ func runHttpsListener() {
 			}
 
 			if isPrivateNetwork {
-
-				//if proxy.Verbose {
-				log.Printf("Chain local IP wihout filtering")
-				//}
-				chainReqWithoutFiltering(tlsConn, ip, port)
+				if proxy.Verbose {
+					log.Printf("Chain local IP wihout filtering %s", ipString)
+				}
+				chainReqWithoutFiltering(tlsConn, ip.String(), port)
 				return
 			}
 
@@ -421,6 +411,12 @@ func runHttpsListener() {
 			host := tlsConn.Host()
 			if host == "" {
 				log.Printf("Cannot support client")
+				host = ipString
+			}
+
+			if adBlockMatcher.IsDomainWhitelisted(host) {
+				log.Printf("Early whitelisting https host %s", host)
+				chainReqWithoutFiltering(tlsConn, host, port)
 				return
 			}
 
@@ -464,15 +460,15 @@ func chainReqToHttp(client net.Conn) {
 	nonBlockingCopy(client, remote)
 }
 
-func chainReqWithoutFiltering(client net.Conn, ip net.IP, port int) {
-	remote, err := net.Dial("tcp", net.JoinHostPort(ip.String(), strconv.Itoa(port)))
+func chainReqWithoutFiltering(client net.Conn, host string, port int) {
+	defer client.Close()
+	remote, err := net.Dial("tcp", net.JoinHostPort(host, strconv.Itoa(port)))
 	if err != nil {
 		log.Printf("chainReqWithoutFiltering error connect %s", err)
 		return
 	}
 
 	defer remote.Close()
-	defer client.Close()
 
 	go func() {
 		io.Copy(remote, client)
@@ -591,11 +587,12 @@ func main() {
 }
 
 func test() {
+	//testUtls()
 	log.Printf("main: starting HTTP server")
 
 	Init(14500, 14501, "rootCertificate.pem", "rootPrivateKey.pem")
 	Start()
-	SetProxyLogFile("text.log")
+	//SetProxyLogFile("text.log")
 
 	AdBlockMatcherInitialize()
 	AdblockMatcherLoadingFinished()
@@ -613,7 +610,6 @@ func test() {
 			quit = true
 		}
 	}
-
 	//	Stop()
 	//	log.Printf("main: done. exiting")
 }
