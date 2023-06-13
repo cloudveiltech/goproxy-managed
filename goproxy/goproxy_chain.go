@@ -7,7 +7,6 @@ import (
 	"crypto/elliptic"
 	"crypto/rsa"
 	"crypto/sha1"
-	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
@@ -22,13 +21,15 @@ import (
 	"strings"
 	"time"
 
+	"crypto/tls"
+
 	"github.com/cloudveiltech/goproxy"
 )
 
 func runConfigurationServerListener() {
 	log.Printf("Starting configuration server %d", configuredConfigurationServerPort)
 	cert, _ := signHost(rootCert, []string{"127.0.0.1", "localhost"})
-	config := getDefaultTlsConfig()
+	config := &tls.Config{}
 	config.Certificates = append(config.Certificates, *cert)
 	config.NextProtos = []string{"http/1.1"}
 

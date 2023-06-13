@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/tls"
 	"io"
 	"io/ioutil"
 	"log"
@@ -16,12 +15,18 @@ import (
 	"github.com/cloudveiltech/goproxy"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
+
+	tls "github.com/refraction-networking/utls"
 )
 
 var http2ProxySessionCounter int64
 
 const MAX_FILTERABLE_LENGTH = 1024 * 1024
 const MIN_FILTERABLE_LENGTH = 100
+
+const STATUS_BLOCKED = 0
+const STATUS_OK = 1
+const STATUS_ENDED = 2
 
 type Http2Handler struct {
 	maxFrameSize           uint32
@@ -36,7 +41,7 @@ type Http2Handler struct {
 	rwMutex                *sync.RWMutex
 }
 
-func serveHttp2Filtering(r *http.Request, rawClientTls *tls.Conn, remote *tls.Conn) bool {
+func serveHttp2Filtering(r *http.Request, rawClientTls *tls.Conn, remote *tls.UConn) bool {
 	log.Print("Running http2 handler for " + r.URL.String())
 
 	http2Handler := &Http2Handler{
@@ -58,7 +63,7 @@ func serveHttp2Filtering(r *http.Request, rawClientTls *tls.Conn, remote *tls.Co
 	return true
 }
 
-func (http2Handler *Http2Handler) processHttp2Stream(local *tls.Conn, remote *tls.Conn) {
+func (http2Handler *Http2Handler) processHttp2Stream(local *tls.Conn, remote *tls.UConn) {
 	const preface = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 	b := make([]byte, len(preface))
 	if _, err := io.ReadFull(local, b); err != nil {
@@ -76,19 +81,21 @@ func (http2Handler *Http2Handler) processHttp2Stream(local *tls.Conn, remote *tl
 	reverseFramer := http2.NewFramer(local, remote)
 
 	go func() {
-		defer remote.Close()
-		defer local.Close()
 		decoder := hpack.NewDecoder(65536, nil)
 		for {
-			if !http2Handler.readFrame(reverseFramer, directFramer, decoder, false) {
+			res := http2Handler.readFrame(reverseFramer, directFramer, decoder, false)
+			if res != STATUS_OK {
 				return
 			}
 		}
 	}()
-
 	decoder := hpack.NewDecoder(65536, nil)
 	for {
-		if !http2Handler.readFrame(directFramer, reverseFramer, decoder, true) {
+		res := http2Handler.readFrame(directFramer, reverseFramer, decoder, true)
+		if res != STATUS_OK {
+			if res == STATUS_BLOCKED {
+				remote.Close()
+			}
 			return
 		}
 	}
@@ -106,11 +113,11 @@ func isContentTypeFilterable(contentType string) bool {
 		strings.Contains(contentType, "image/webp")
 }
 
-func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.Framer, decoder *hpack.Decoder, client bool) bool {
+func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.Framer, decoder *hpack.Decoder, client bool) int {
 	f, err := directFramer.ReadFrame()
 	if err != nil {
 		log.Printf("ReadFrame client %v, err: %v", client, err)
-		return false
+		return STATUS_ENDED
 	}
 
 	switch f.Header().Type {
@@ -140,7 +147,7 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 			whitelisted = exists && !(blocked.(bool))
 		}
 
-		processDataFrameFunc := func(force bool, streamId uint32, directFramer, reverseFramer *http2.Framer, decoder *hpack.Decoder, client bool) bool {
+		processDataFrameFunc := func(force bool, streamId uint32, directFramer, reverseFramer *http2.Framer, decoder *hpack.Decoder, client bool) int {
 			if force {
 				log.Print("Force ending stream on timeout")
 			}
@@ -160,7 +167,6 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 				isContentTypeFilterable = isContentTypeFilterable && (contentLength < MAX_FILTERABLE_LENGTH || isImage)
 				if isContentTypeFilterable && streamEnded {
 					if contentLength > MIN_FILTERABLE_LENGTH {
-
 						http2Handler.rwMutex.RLock()
 						ctx := http2Handler.proxyCtx[streamId]
 						http2Handler.rwMutex.RUnlock()
@@ -187,11 +193,11 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 							delete(http2Handler.lastHttpRequest, streamId)
 							delete(http2Handler.responseBodyMapChunks, streamId)
 							http2Handler.rwMutex.Unlock()
-							return false
+							return STATUS_BLOCKED
 						}
 					}
 				} else if isContentTypeFilterable {
-					return true
+					return STATUS_OK
 				}
 			}
 
@@ -218,7 +224,7 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 			http2Handler.rwMutex.Lock()
 			delete(http2Handler.responseBodyMapChunks, streamId)
 			http2Handler.rwMutex.Unlock()
-			return true
+			return STATUS_OK
 		}
 
 		processDataFrameFunc(false, streamId, directFramer, reverseFramer, decoder, client)
@@ -241,14 +247,23 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 		if len(headerFields) == 0 {
 			log.Printf("Error parsing headers")
 		}
-		writeHeadersImmediately := client || fr.StreamEnded()
+		whitelisted := false
+
+		streamId := f.Header().StreamID
+		ctx := http2Handler.proxyCtx[streamId]
+		if ctx != nil && ctx.UserData != nil {
+			blocked, exists := ctx.UserData.(map[string]interface{})["blocked"]
+			whitelisted = exists && !(blocked.(bool))
+		}
+
+		writeHeadersImmediately := whitelisted || client || fr.StreamEnded()
 		if client {
 			request := makeHttpRequest(nil, headerFields)
 			var ctx = &goproxy.ProxyCtx{Req: request, Session: atomic.AddInt64(&http2ProxySessionCounter, 1)}
 
 			http2Handler.rwMutex.Lock()
-			http2Handler.lastHttpRequest[f.Header().StreamID] = request
-			http2Handler.proxyCtx[f.Header().StreamID] = ctx
+			http2Handler.lastHttpRequest[streamId] = request
+			http2Handler.proxyCtx[streamId] = ctx
 			http2Handler.rwMutex.Unlock()
 			_, resp := proxy.FilterRequest(request, ctx)
 
@@ -257,7 +272,7 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 					reverseFramer.WriteSettings()
 				}
 				writeHeaders(reverseFramer, &http2.HeadersFrameParam{
-					StreamID:      f.Header().StreamID,
+					StreamID:      streamId,
 					BlockFragment: encodeHeaders(resp),
 					EndStream:     false,
 					EndHeaders:    true,
@@ -267,16 +282,16 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 				buf := new(bytes.Buffer)
 				buf.ReadFrom(resp.Body)
 
-				writeFinalData(reverseFramer, f.Header().StreamID, buf, int(http2Handler.maxFrameSize))
-				reverseFramer.WriteGoAway(f.Header().StreamID, http2.ErrCodeRefusedStream, nil)
-				return false
+				writeFinalData(reverseFramer, streamId, buf, int(http2Handler.maxFrameSize))
+				reverseFramer.WriteGoAway(streamId, http2.ErrCodeRefusedStream, nil)
+				return STATUS_BLOCKED
 			}
 		} else {
 			response := makeHttpResponse(nil, headerFields)
 
 			http2Handler.rwMutex.Lock()
-			http2Handler.lastHttpResponse[f.Header().StreamID] = response
-			http2Handler.lastHttpResponse[f.Header().StreamID].Request = http2Handler.lastHttpRequest[f.Header().StreamID]
+			http2Handler.lastHttpResponse[streamId] = response
+			http2Handler.lastHttpResponse[streamId].Request = http2Handler.lastHttpRequest[streamId]
 			http2Handler.rwMutex.Unlock()
 
 			contentType := response.Header.Get("Content-Type")
@@ -287,7 +302,7 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 		}
 
 		header := http2.HeadersFrameParam{
-			StreamID:      f.Header().StreamID,
+			StreamID:      streamId,
 			BlockFragment: encodeHeaderFields(headerFields),
 			EndStream:     fr.StreamEnded(),
 			EndHeaders:    fr.HeadersEnded(),
@@ -362,7 +377,7 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 		directFramer.WriteRawFrame(f.Header().Type, f.Header().Flags, f.Header().StreamID, fr.Payload())
 	}
 
-	return true
+	return STATUS_OK
 }
 
 func decodeAllHeaders(framer *http2.Framer, fr *http2.HeadersFrame, decoder *hpack.Decoder) ([]hpack.HeaderField, []byte) {

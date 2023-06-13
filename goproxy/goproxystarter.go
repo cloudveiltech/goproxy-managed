@@ -17,7 +17,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
@@ -86,13 +85,6 @@ func initGoProxy() {
 		MaxIdleConns:          1000,
 		IdleConnTimeout:       time.Minute * 10,
 		ResponseHeaderTimeout: time.Minute * 10,
-		TLSClientConfig: &tls.Config{
-			NextProtos:               []string{"http/1.1"},
-			InsecureSkipVerify:       true,
-			CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
-			PreferServerCipherSuites: true,
-			Renegotiation:            tls.RenegotiateFreelyAsClient,
-		},
 	}
 
 	proxy.OnRequest().HandleConnect(handleConnectFunc)
@@ -167,6 +159,12 @@ func runHttpsListener() {
 				return
 			}
 
+			if adBlockMatcher.IsDomainWhitelisted(host) {
+				log.Printf("Early whitelisting https host %s", host)
+				chainReqWithoutFiltering(tlsConn, host, port)
+				return
+			}
+
 			host = net.JoinHostPort(host, strconv.Itoa(int(port)))
 			resp := dumbResponseWriter{tlsConn}
 			connectReq := &http.Request{
@@ -184,6 +182,22 @@ func runHttpsListener() {
 	}
 }
 
+func chainReqWithoutFiltering(client net.Conn, host string, port uint16) {
+	defer client.Close()
+	remote, err := net.Dial("tcp", net.JoinHostPort(host, strconv.Itoa(int(port))))
+	if err != nil {
+		log.Printf("chainReqWithoutFiltering error connect %s", err)
+		return
+	}
+
+	defer remote.Close()
+
+	go func() {
+		io.Copy(remote, client)
+	}()
+
+	io.Copy(client, remote)
+}
 func chainReqToHttp(client net.Conn) {
 	chainReqToHost(client, fmt.Sprintf("127.0.0.1:%d", configuredPortHttp))
 }

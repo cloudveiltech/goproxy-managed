@@ -5,7 +5,6 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -17,7 +16,10 @@ import (
 	"strings"
 	"time"
 
+	oldTls "crypto/tls"
+
 	"github.com/cloudveiltech/goproxy"
+	tls "github.com/refraction-networking/utls"
 )
 
 func getDefaultTlsConfig() *tls.Config {
@@ -80,8 +82,16 @@ func setCA(caCert, caKey []byte) error {
 	goproxy.MitmConnect = &goproxy.ConnectAction{Action: goproxy.ConnectMitm, TLSConfig: goproxy.TLSConfigFromCA(&goproxyCa)}
 	goproxy.HTTPMitmConnect = &goproxy.ConnectAction{Action: goproxy.ConnectHTTPMitm, TLSConfig: goproxy.TLSConfigFromCA(&goproxyCa)}
 	goproxy.RejectConnect = &goproxy.ConnectAction{Action: goproxy.ConnectReject, TLSConfig: goproxy.TLSConfigFromCA(&goproxyCa)}
-	rootCert = goproxyCa
 
+	rootCert, err = oldTls.X509KeyPair(caCert, caKey)
+	if err != nil {
+		log.Printf("Can't load cert/key file")
+		return err
+	}
+	if rootCert.Leaf, err = x509.ParseCertificate(rootCert.Certificate[0]); err != nil {
+		log.Printf("Can't parse cert key/file")
+		return err
+	}
 	return nil
 }
 
