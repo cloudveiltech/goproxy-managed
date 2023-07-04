@@ -157,7 +157,7 @@ func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 }
 
 func startHttpServer() *http.Server {
-	srv := &http.Server{Addr: fmt.Sprintf("0.0.0.0:%d", config.portHttp)}
+	srv := &http.Server{Addr: fmt.Sprintf(":%d", config.portHttp)}
 	srv.Handler = proxy
 	go func() {
 		err := srv.ListenAndServe()
@@ -266,8 +266,6 @@ func Start() {
 
 						return request, response //goproxy.NewResponse(request, "text/plain", 401, "Blocked by rules")
 					}
-				} else {
-					log.Printf("No categories matched %s", request.URL.String())
 				}
 
 			}
@@ -282,6 +280,9 @@ func Start() {
 
 	proxy.OnResponse().DoFunc(
 		func(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
+			if resp == nil {
+				return nil
+			}
 			response := resp
 
 			var isVerified bool = true
@@ -371,6 +372,11 @@ func runHttpsListener() {
 
 			port := DEFAULT_HTTPS_PORT
 			ipString := "127.0.0.1"
+			remoteAddr := tlsConn.LocalAddr().String()
+			if strings.Count(remoteAddr, ":") > 1 {
+				//ipv6
+				ipString = "::1"
+			}
 			exists := false
 			attempts := 0
 			for attempts < 3000 {
