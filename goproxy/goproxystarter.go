@@ -198,8 +198,50 @@ func chainReqWithoutFiltering(client net.Conn, host string, port uint16) {
 
 	io.Copy(client, remote)
 }
+
 func chainReqToHttp(client net.Conn) {
-	chainReqToHost(client, fmt.Sprintf("127.0.0.1:%d", configuredPortHttp))
+	localAddress := client.LocalAddr().(*net.TCPAddr).IP
+
+	remote, err := net.Dial("tcp", net.JoinHostPort(localAddress.String(), strconv.Itoa(int(configuredPortHttp))))
+	if err != nil {
+		log.Printf("chainReqToHttp error connect %s", err)
+		return
+	}
+
+	defer remote.Close()
+	defer client.Close()
+
+	go func() {
+		nonBlockingCopy(remote, client)
+	}()
+
+	nonBlockingCopy(client, remote)
+}
+
+func nonBlockingCopy(from, to net.Conn) {
+	buf := make([]byte, 10240)
+	for {
+		from.SetDeadline(time.Now().Add(time.Minute * 10))
+		if server == nil {
+			log.Printf("Break chain on server stop")
+			break
+		}
+
+		n, err := from.Read(buf)
+		if err != nil && err != io.EOF {
+			log.Printf("error request %s", err)
+			break
+		}
+		if n == 0 {
+			break
+		}
+
+		if _, err := to.Write(buf[:n]); err != nil {
+			log.Printf("error response %s", err)
+			break
+		}
+
+	}
 }
 
 func chainReqToHost(client net.Conn, hostPort string) {
@@ -221,7 +263,7 @@ func chainReqToHost(client net.Conn, hostPort string) {
 }
 
 func startHttpServer(port int16) *http.Server {
-	srv := &http.Server{Addr: fmt.Sprintf("127.0.0.1:%d", port)}
+	srv := &http.Server{Addr: fmt.Sprintf(":%d", port)}
 	srv.Handler = proxy
 	proxy.Http2Handler = serveHttp2Filtering
 
