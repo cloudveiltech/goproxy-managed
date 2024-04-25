@@ -22,5 +22,12 @@ set GOPROXY_BIN=bin\x86
 set GOPROXY_GOPATH=%UserProfile%\go32
 call build-internal.bat
 
+set GOARCH=arm64
+set CC=d:\llvm-mingw-20240404-msvcrt-i686\bin\aarch64-w64-mingw32-gcc.exe
+set CXX=d:\llvm-mingw-20240404-msvcrt-i686\bin\aarch64-w64-mingw32-g++.exe
+set GOPROXY_BIN=bin\arm64
+set GOPROXY_GOPATH=%UserProfile%\go
+call build-internal.bat
+
 set PATH=%OLD_PATH%
 
