@@ -39,6 +39,7 @@ import (
 
 	"github.com/cloudveiltech/goproxy"
 	"github.com/inconshreveable/go-vhost"
+	"github.com/things-go/go-socks5"
 )
 
 type Config struct {
@@ -46,10 +47,13 @@ type Config struct {
 	portHttps int16
 }
 
+const VERSION_SOCKS5 = byte(0x05)
+
 var (
-	proxy  *goproxy.ProxyHttpServer
-	server *http.Server
-	config = Config{8080, 8081}
+	proxy        *goproxy.ProxyHttpServer
+	server       *http.Server
+	socks5Server *socks5.Server
+	config       = Config{8080, 8081}
 
 	beforeRequestCallback  unsafe.Pointer
 	beforeResponseCallback unsafe.Pointer
@@ -334,12 +338,27 @@ func Start() {
 		})
 
 	go runHttpsListener()
+	createSocksHandler()
 
 	if proxy.Verbose {
 		log.Printf("Server started %d, %d", config.portHttp, config.portHttps)
 	}
 
 	monitorMemoryUsage()
+}
+
+func createSocksHandler() {
+	option1 := socks5.WithDialAndRequest(func(ctx context.Context, network, addr string, request *socks5.Request) (net.Conn, error) {
+		log.Printf("Socks 5 dialer called %v", addr)
+
+		conn, err := net.Dial("tcp", net.JoinHostPort("::1", strconv.Itoa(int(config.portHttps))))
+		SetDestPortForLocalPort(conn.LocalAddr().(*net.TCPAddr).Port, request.DstAddr.Port, addr)
+		return conn, err
+	})
+	option2 := socks5.WithLogger(socks5.NewLogger(log.New(os.Stdout, "socks5: ", log.LstdFlags)))
+	socks5Server = socks5.NewServer(option1, option2)
+
+	log.Printf("Socks5 handler created")
 }
 
 func runHttpsListener() {
@@ -367,8 +386,36 @@ func runHttpsListener() {
 		}
 
 		go func(c net.Conn) {
-			tlsConn, err := vhost.TLS(c)
+			buffered := newBufferedConn(c)
+			tmp, err := buffered.Peek(2)
+			if err != nil {
+				log.Printf("Can't read from %v", err)
+				return
+			}
+
+			if tmp[0] == VERSION_SOCKS5 {
+				log.Printf("Socks request detected")
+				err = socks5Server.ServeConn(buffered)
+				if err != nil {
+					log.Printf("Can't serve socks %v", err)
+				}
+				return
+			}
+			tlsConn, err := vhost.TLS(buffered)
 			localPort := tlsConn.RemoteAddr().(*net.TCPAddr).Port
+
+			if err != nil {
+				log.Printf("Assuming plain http connection - %v", err)
+				httpConn, err := vhost.HTTP(tlsConn)
+				if err != nil {
+					log.Printf("Not http either, dropping - %v", err)
+					httpConn.Close()
+					return
+				}
+
+				chainReqToLocalServer(httpConn, int(config.portHttp))
+				return
+			}
 
 			port := DEFAULT_HTTPS_PORT
 			ipString := "127.0.0.1"
@@ -395,13 +442,8 @@ func runHttpsListener() {
 			}
 
 			ip := net.ParseIP(ipString)
-			isPrivateNetwork := ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalMulticast()
-			if err != nil && !isPrivateNetwork {
-				log.Printf("Assuming plain http connection - %v", err)
-				chainReqToHttp(tlsConn)
-				return
-			}
 
+			isPrivateNetwork := ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalMulticast()
 			if isPrivateNetwork {
 				if proxy.Verbose {
 					log.Printf("Chain local IP wihout filtering %s", ipString)
@@ -411,12 +453,12 @@ func runHttpsListener() {
 			}
 
 			if proxy.Verbose {
-				log.Printf("Reading dest port for %d is %d", localPort, port)
+				log.Printf("Read port: %d for ip %v", port, ipString)
 			}
 
 			host := tlsConn.Host()
 			if host == "" {
-				log.Printf("Cannot support client")
+				log.Printf("Error reading tls host")
 				host = ipString
 			}
 
@@ -424,10 +466,6 @@ func runHttpsListener() {
 				log.Printf("Early whitelisting https host %s", host)
 				chainReqWithoutFiltering(tlsConn, host, port)
 				return
-			}
-
-			if proxy.Verbose {
-				log.Printf("Https handler called for %s:%s", host, strconv.Itoa(port))
 			}
 
 			host = net.JoinHostPort(host, strconv.Itoa(port))
@@ -441,18 +479,17 @@ func runHttpsListener() {
 				Host:   host,
 				Header: make(http.Header),
 			}
-
 			proxy.ServeHTTP(resp, connectReq)
 		}(c)
 	}
 }
 
-func chainReqToHttp(client net.Conn) {
+func chainReqToLocalServer(client net.Conn, port int) {
 	localAddress := client.LocalAddr().(*net.TCPAddr).IP
 
-	remote, err := net.Dial("tcp", net.JoinHostPort(localAddress.String(), strconv.Itoa(int(config.portHttp))))
+	remote, err := net.Dial("tcp", net.JoinHostPort(localAddress.String(), strconv.Itoa(port)))
 	if err != nil {
-		log.Printf("chainReqToHttp error connect %s", err)
+		log.Printf("chainReqToLocalServer error connect %s", err)
 		return
 	}
 
