@@ -462,7 +462,17 @@ func runHttpsListener() {
 				host = ipString
 			}
 
-			if adBlockMatcher.IsDomainWhitelisted(host) {
+			r, err := http.NewRequest("GET", "http://"+host, nil)
+			session := session{r, nil, false}
+			var response *http.Response = nil
+			id := saveSessionToInteropMap(int64(localPort), &session)
+			defer removeSessionFromInteropMap(id)
+			if beforeRequestCallback != nil {
+				C.FireCallback(beforeRequestCallback, C.longlong(id))
+				response = session.response
+			}
+
+			if response == nil && adBlockMatcher.IsDomainWhitelisted(host) {
 				log.Printf("Early whitelisting https host %s", host)
 				chainReqWithoutFiltering(tlsConn, host, port)
 				return
