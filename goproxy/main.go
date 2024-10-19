@@ -126,7 +126,7 @@ func SetProxyLogFile(logFile string) {
 func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 	loadAndSetCa(certFile, keyFile)
 	proxy = goproxy.NewProxyHttpServer()
-	proxy.Verbose = false
+	proxy.Verbose = true
 	proxy.Http2Handler = serveHttp2Filtering
 
 	if proxy.Verbose {
@@ -404,19 +404,6 @@ func runHttpsListener() {
 			tlsConn, err := vhost.TLS(buffered)
 			localPort := tlsConn.RemoteAddr().(*net.TCPAddr).Port
 
-			if err != nil {
-				log.Printf("Assuming plain http connection - %v", err)
-				httpConn, err := vhost.HTTP(tlsConn)
-				if err != nil {
-					log.Printf("Not http either, dropping - %v", err)
-					httpConn.Close()
-					return
-				}
-
-				chainReqToLocalServer(httpConn, int(config.portHttp))
-				return
-			}
-
 			port := DEFAULT_HTTPS_PORT
 			ipString := "127.0.0.1"
 			remoteAddr := tlsConn.LocalAddr().String()
@@ -454,6 +441,20 @@ func runHttpsListener() {
 
 			if proxy.Verbose {
 				log.Printf("Read port: %d for ip %v", port, ipString)
+			}
+
+			if err != nil {
+				log.Printf("Assuming plain http connection - %v", err)
+				httpConn, err := vhost.HTTP(tlsConn)
+				if err != nil {
+					log.Printf("Not http either, skipping - %v, %s %d", err, ip.String(), port)
+
+					chainReqWithoutFiltering(httpConn, ip.String(), port)
+					return
+				}
+
+				chainReqToLocalServer(httpConn, int(config.portHttp))
+				return
 			}
 
 			host := tlsConn.Host()
