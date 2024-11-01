@@ -206,7 +206,7 @@ func Start() {
 			//dumpRequest(r)
 			request := r
 			var response *http.Response = nil
-			session := session{r, nil, false}
+			session := session{r, nil, false, nil}
 			id := saveSessionToInteropMap(ctx.Session, &session)
 			defer removeSessionFromInteropMap(id)
 
@@ -296,9 +296,9 @@ func Start() {
 			if !isContentTypeFilterable {
 				return resp
 			}
-			if response != nil && response.TLS != nil {
+			if response != nil && ctx.ConnectionState != nil {
 				var err error
-				isVerified, err = verifyCerts(ctx.Req.URL.Host, response.TLS.PeerCertificates)
+				isVerified, err = verifyCerts(ctx.Req.URL.Host, ctx.ConnectionState.PeerCertificates)
 				if err != nil {
 					isVerified = false
 				}
@@ -325,7 +325,7 @@ func Start() {
 			// 1. Need a boolean that says IsVerified for Response
 			// 2. Need a block page that allows us to bypass it directly from the block page.
 			if beforeResponseCallback != nil {
-				session := session{ctx.Req, resp, isVerified}
+				session := session{ctx.Req, resp, isVerified, ctx.ConnectionState}
 				session.isCertVerified = isVerified
 				id := saveSessionToInteropMap(ctx.Session, &session)
 				C.FireCallback(beforeResponseCallback, C.longlong(id))
@@ -464,7 +464,7 @@ func runHttpsListener() {
 			}
 
 			r, err := http.NewRequest("GET", "http://"+host, nil)
-			session := session{r, nil, false}
+			session := session{r, nil, false, nil}
 			var response *http.Response = nil
 			id := saveSessionToInteropMap(int64(localPort), &session)
 			defer removeSessionFromInteropMap(id)

@@ -12,6 +12,8 @@ set GOPROXY_PATH=C:\Program Files\Go\bin
 set GOPROXY_GOPATH=%UserProfile%\go
 set CGO_LDFLAGS=
 set CGO_ENABLED=1
+set CC=d:\llvm-mingw-20240404-msvcrt-i686\bin\x86_64-w64-mingw32-gcc.exe
+set CXX=d:\llvm-mingw-20240404-msvcrt-i686\bin\x86_64-w64-mingw32-g++.exe
 call build-internal.bat
 
 REM TODO Add Darwin building

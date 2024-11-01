@@ -83,7 +83,7 @@ func (http2Handler *Http2Handler) processHttp2Stream(local *tls.Conn, remote *tl
 	go func() {
 		decoder := hpack.NewDecoder(65536, nil)
 		for {
-			res := http2Handler.readFrame(reverseFramer, directFramer, decoder, false)
+			res := http2Handler.readFrame(reverseFramer, directFramer, decoder, remote.ConnectionState(), false)
 			if res != STATUS_OK {
 				return
 			}
@@ -91,7 +91,7 @@ func (http2Handler *Http2Handler) processHttp2Stream(local *tls.Conn, remote *tl
 	}()
 	decoder := hpack.NewDecoder(65536, nil)
 	for {
-		res := http2Handler.readFrame(directFramer, reverseFramer, decoder, true)
+		res := http2Handler.readFrame(directFramer, reverseFramer, decoder, remote.ConnectionState(), true)
 		if res != STATUS_OK {
 			if res == STATUS_BLOCKED {
 				remote.Close()
@@ -113,7 +113,7 @@ func isContentTypeFilterable(contentType string) bool {
 		strings.Contains(contentType, "image/webp")
 }
 
-func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.Framer, decoder *hpack.Decoder, client bool) int {
+func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.Framer, decoder *hpack.Decoder, connectionState tls.ConnectionState, client bool) int {
 	f, err := directFramer.ReadFrame()
 	if err != nil {
 		log.Printf("ReadFrame client %v, err: %v", client, err)
@@ -259,7 +259,7 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 		writeHeadersImmediately := whitelisted || client || fr.StreamEnded()
 		if client {
 			request := makeHttpRequest(nil, headerFields)
-			var ctx = &goproxy.ProxyCtx{Req: request, Session: atomic.AddInt64(&http2ProxySessionCounter, 1)}
+			var ctx = &goproxy.ProxyCtx{Req: request, Session: atomic.AddInt64(&http2ProxySessionCounter, 1), ConnectionState: &connectionState}
 
 			http2Handler.rwMutex.Lock()
 			http2Handler.lastHttpRequest[streamId] = request

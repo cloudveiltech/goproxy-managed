@@ -70,7 +70,6 @@ func ResponseGetBodyAsString(id int64, res *string) bool {
 }
 
 func decodeResponseCompression(contentEncoding string, body []byte) []byte {
-	log.Printf("Decoding body: %s", contentEncoding)
 	switch contentEncoding {
 	case "gzip":
 		reader, err := gzip.NewReader(bytes.NewBuffer(body))
@@ -170,14 +169,11 @@ func ResponseGetHeaders(id int64, keys *string) int {
 
 //export ResponseGetCertificatesCount
 func ResponseGetCertificatesCount(id int64) int {
-	response := getSessionResponse(id)
-	if response == nil {
+	connectionState := getSessionConnectionState(id)
+	if connectionState == nil {
 		return 0
 	}
-	if response.TLS == nil {
-		return 0
-	}
-	return len(response.TLS.PeerCertificates)
+	return len(connectionState.PeerCertificates)
 }
 
 //export ResponseIsTLSVerified
@@ -188,15 +184,12 @@ func ResponseIsTLSVerified(id int64) bool {
 
 //export ResponseGetCertificate
 func ResponseGetCertificate(id int64, index int32, certData *[]byte) int {
-	response := getSessionResponse(id)
-	if response == nil {
-		return 0
-	}
-	if response.TLS == nil {
+	connectionState := getSessionConnectionState(id)
+	if connectionState == nil {
 		return 0
 	}
 
-	cert := response.TLS.PeerCertificates[index]
+	cert := connectionState.PeerCertificates[index]
 
 	*certData = cert.Raw
 

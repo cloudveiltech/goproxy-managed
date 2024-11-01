@@ -4,12 +4,15 @@ import (
 	"C"
 	"net/http"
 	"sync"
+
+	utls "github.com/refraction-networking/utls"
 )
 
 type session struct {
-	request        *http.Request
-	response       *http.Response
-	isCertVerified bool
+	request         *http.Request
+	response        *http.Response
+	isCertVerified  bool
+	connectionState *utls.ConnectionState
 }
 
 var (
@@ -59,6 +62,16 @@ func getSessionResponse(id int64) *http.Response {
 		return nil
 	}
 	return session.response
+}
+
+func getSessionConnectionState(id int64) *utls.ConnectionState {
+	mapWriteLock.Lock()
+	defer mapWriteLock.Unlock()
+	session, exists := sessionMap[id]
+	if !exists {
+		return nil
+	}
+	return session.connectionState
 }
 
 func isSessionTlsVerified(id int64) bool {
