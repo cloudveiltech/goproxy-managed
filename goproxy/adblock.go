@@ -182,7 +182,7 @@ func (am *AdBlockMatcher) matchRulesCategories(matcherCategories []*MatcherCateg
 func matchDomain(domainParts []string, matcherCatergory *MatcherCategory) (bool, int) {
 	partsLen := len(domainParts)
 	if partsLen < 2 {
-		log.Printf("Domain too short")
+		//	log.Printf("Domain too short")
 		return false, Included
 	}
 	domainName := domainParts[partsLen-1]

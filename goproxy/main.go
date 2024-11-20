@@ -48,6 +48,7 @@ type Config struct {
 }
 
 const VERSION_SOCKS5 = byte(0x05)
+const ENABLE_IMAGE_FILTERING = false
 
 var (
 	proxy        *goproxy.ProxyHttpServer
@@ -126,7 +127,7 @@ func SetProxyLogFile(logFile string) {
 func Init(portHttp int16, portHttps int16, certFile string, keyFile string) {
 	loadAndSetCa(certFile, keyFile)
 	proxy = goproxy.NewProxyHttpServer()
-	proxy.Verbose = true
+	proxy.Verbose = false
 	proxy.Http2Handler = serveHttp2Filtering
 
 	if proxy.Verbose {
@@ -292,7 +293,7 @@ func Start() {
 			var isVerified bool = true
 
 			contentType := response.Header.Get("Content-Type")
-			isContentTypeFilterable := isContentTypeFilterable(contentType)
+			isContentTypeFilterable := isContentTypeFilterable(contentType, 0)
 			if !isContentTypeFilterable {
 				return resp
 			}

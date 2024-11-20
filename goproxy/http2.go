@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/cloudveiltech/goproxy"
 	"golang.org/x/net/http2"
@@ -39,10 +40,17 @@ type Http2Handler struct {
 	debouncers             map[uint32]func(f func())
 	connectionReadyForData bool
 	rwMutex                *sync.RWMutex
+	verbose                bool
+	id                     int64
 }
 
 func serveHttp2Filtering(r *http.Request, rawClientTls *tls.Conn, remote *tls.UConn) bool {
 	log.Print("Running http2 handler for " + r.URL.String())
+	verbose := false
+	if strings.Contains(r.URL.String(), "google.com") || strings.Contains(r.URL.String(), "gstatic") {
+		log.Printf("Google %s: serveHttp2Filtering", r.URL.String())
+		verbose = true
+	}
 
 	http2Handler := &Http2Handler{
 		maxFrameSize:           1024,
@@ -55,6 +63,8 @@ func serveHttp2Filtering(r *http.Request, rawClientTls *tls.Conn, remote *tls.UC
 		debouncers:             make(map[uint32]func(f func())),
 		connectionReadyForData: false,
 		rwMutex:                &sync.RWMutex{},
+		verbose:                verbose,
+		id:                     time.Now().Unix(),
 	}
 	go func() {
 		http2Handler.processHttp2Stream(rawClientTls, remote)
@@ -71,7 +81,7 @@ func (http2Handler *Http2Handler) processHttp2Stream(local *tls.Conn, remote *tl
 		return
 	}
 	if string(b) != preface {
-		log.Printf("ReadFrame: preface error")
+		log.Printf("%d ReadFrame: preface error, flagged: %v", http2Handler.id, http2Handler.verbose)
 		return
 	}
 	remote.Write(b)
@@ -85,6 +95,7 @@ func (http2Handler *Http2Handler) processHttp2Stream(local *tls.Conn, remote *tl
 		for {
 			res := http2Handler.readFrame(reverseFramer, directFramer, decoder, remote.ConnectionState(), false)
 			if res != STATUS_OK {
+				local.Close()
 				return
 			}
 		}
@@ -101,31 +112,40 @@ func (http2Handler *Http2Handler) processHttp2Stream(local *tls.Conn, remote *tl
 	}
 }
 
-func isContentTypeFilterable(contentType string) bool {
+func isContentTypeFilterable(contentType string, contentLength int64) bool {
+	if contentLength > MAX_FILTERABLE_LENGTH {
+		return false
+	}
 	if strings.Contains(contentType, "protobuf") {
 		return false
 	}
-	return strings.Contains(contentType, "html") ||
-		strings.Contains(contentType, "json") ||
-		strings.Contains(contentType, "image/png") ||
-		strings.Contains(contentType, "image/jpg") ||
-		strings.Contains(contentType, "image/jpeg") ||
-		strings.Contains(contentType, "image/webp")
+
+	result := strings.Contains(contentType, "html") || strings.Contains(contentType, "json")
+	if ENABLE_IMAGE_FILTERING && !result {
+		result = result ||
+			strings.Contains(contentType, "image/png") ||
+			strings.Contains(contentType, "image/jpg") ||
+			strings.Contains(contentType, "image/jpeg") ||
+			strings.Contains(contentType, "image/webp")
+	}
+	return result
 }
 
 func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.Framer, decoder *hpack.Decoder, connectionState tls.ConnectionState, client bool) int {
 	f, err := directFramer.ReadFrame()
 	if err != nil {
-		log.Printf("ReadFrame client %v, err: %v", client, err)
+		log.Printf("%d ReadFrame client %v, err: %v, flagged: %v", http2Handler.id, client, err, http2Handler.verbose)
 		return STATUS_ENDED
 	}
-
 	switch f.Header().Type {
 	case http2.FrameData:
 		fr := f.(*http2.DataFrame)
 		body := fr.Data()
 
 		streamId := f.Header().StreamID
+		if http2Handler.verbose {
+			log.Printf("%d Data frame received client: %v, flagged: %v", http2Handler.id, client, http2Handler.verbose)
+		}
 
 		http2Handler.rwMutex.RLock()
 		lastHttpResponse := http2Handler.lastHttpResponse[streamId]
@@ -155,16 +175,16 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 			lastHttpResponse = http2Handler.lastHttpResponse[streamId]
 			bodyChunks = http2Handler.responseBodyMapChunks[streamId]
 			http2Handler.rwMutex.RUnlock()
-
+			if http2Handler.verbose && fr.StreamEnded() {
+				log.Printf("%d Stream ended, flagged: %v", http2Handler.id, client, http2Handler.verbose)
+			}
 			streamEnded := fr.StreamEnded() || force
 			if !whitelisted && lastHttpResponse != nil && !client {
 				contentType := lastHttpResponse.Header.Get("Content-Type")
-				isContentTypeFilterable := isContentTypeFilterable(contentType)
-				isImage := strings.Contains(contentType, "image")
-				putResponseBody(bodyChunks, lastHttpResponse)
 				contentLength := lastHttpResponse.ContentLength
+				isContentTypeFilterable := isContentTypeFilterable(contentType, contentLength)
+				putResponseBody(bodyChunks, lastHttpResponse)
 
-				isContentTypeFilterable = isContentTypeFilterable && (contentLength < MAX_FILTERABLE_LENGTH || isImage)
 				if isContentTypeFilterable && streamEnded {
 					if contentLength > MIN_FILTERABLE_LENGTH {
 						http2Handler.rwMutex.RLock()
@@ -288,15 +308,17 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 			}
 		} else {
 			response := makeHttpResponse(nil, headerFields)
-
+			if http2Handler.verbose {
+				log.Printf("%d Headers received, %d, flagged: %v", http2Handler.id, response.StatusCode, http2Handler.verbose)
+			}
 			http2Handler.rwMutex.Lock()
 			http2Handler.lastHttpResponse[streamId] = response
 			http2Handler.lastHttpResponse[streamId].Request = http2Handler.lastHttpRequest[streamId]
 			http2Handler.rwMutex.Unlock()
 
 			contentType := response.Header.Get("Content-Type")
-			//	contentLength, _ := strconv.Atoi(response.Header.Get("Content-Length"))
-			if !isContentTypeFilterable(contentType) {
+			contentLength, _ := strconv.ParseInt(response.Header.Get("Content-Length"), 0, 64)
+			if !isContentTypeFilterable(contentType, contentLength) {
 				writeHeadersImmediately = true
 			}
 		}
