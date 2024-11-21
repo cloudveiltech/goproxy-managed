@@ -47,10 +47,10 @@ type Http2Handler struct {
 func serveHttp2Filtering(r *http.Request, rawClientTls *tls.Conn, remote *tls.UConn) bool {
 	log.Print("Running http2 handler for " + r.URL.String())
 	verbose := false
-	if strings.Contains(r.URL.String(), "google.com") || strings.Contains(r.URL.String(), "gstatic") {
+	/*	if strings.Contains(r.URL.String(), "google.com") || strings.Contains(r.URL.String(), "gstatic") {
 		log.Printf("Google %s: serveHttp2Filtering", r.URL.String())
 		verbose = true
-	}
+	}*/
 
 	http2Handler := &Http2Handler{
 		maxFrameSize:           1024,
