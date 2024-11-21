@@ -120,6 +120,17 @@ func AdBlockMatcherSetBlacklistCallback(callback unsafe.Pointer) {
 	adBlockBlacklistCallback = callback
 }
 
+//export SetCertificate
+func SetCertificate(certFileC *C.char, keyFileC *C.char) int16 {
+	mainInteropSyncMutex.Lock()
+	defer mainInteropSyncMutex.Unlock()
+
+	certFile := C.GoString(certFileC)
+	keyFile := C.GoString(keyFileC)
+	loadAndSetCa(certFile, keyFile)
+	return SUCCESS
+}
+
 //export StartGoServer
 func StartGoServer(portHttp, portHttps, portConfigurationServer int16, certFileC *C.char, keyFileC *C.char, bannedImageFileC *C.char) int16 {
 	mainInteropSyncMutex.Lock()

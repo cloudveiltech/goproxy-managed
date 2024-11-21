@@ -143,20 +143,38 @@ func runHttpsListener() {
 			port := DEFAULT_HTTPS_PORT
 			if n > 0 {
 				port = binary.BigEndian.Uint16([]byte{helloBuffer[1], helloBuffer[0]})
-				log.Printf("Reading dest port for %d", port)
+
+				add := c.RemoteAddr().String()
+				log.Printf("Reading dest port for %s :%d", add, port)
 			}
 
 			tlsConn, err := vhost.TLS(c)
 			if err != nil {
-				log.Printf("Assuming plain http connection - %v", err)
-				chainReqToHttp(tlsConn)
-				return
+				log.Printf("Error reading TLS connection - %v", err)
+				if port != DEFAULT_HTTPS_PORT {
+					chainReqToHttp(tlsConn)
+					return
+				}
 			}
 
 			host := tlsConn.Host()
 			if host == "" {
-				log.Printf("Cannot support client")
-				return
+				host = tlsConn.LocalAddr().String()
+				remoteHost := tlsConn.RemoteAddr().String()
+				log.Printf("Cannot support client trying host %s remote: %s, https port %d, http port %d", host, remoteHost, configuredPortHttps, configuredPortHttp)
+
+				parsedHost, _, err := net.SplitHostPort(host)
+				if err == nil {
+					ip := net.ParseIP(parsedHost)
+					isPrivateNetwork := ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalMulticast()
+					if isPrivateNetwork {
+						if proxy.Verbose {
+							log.Printf("Chain local IP wihout filtering %s", host)
+						}
+						chainReqWithoutFilteringToAddress(tlsConn, host)
+						return
+					}
+				}
 			}
 
 			if adBlockMatcher.IsDomainWhitelisted(host) {
@@ -184,10 +202,21 @@ func runHttpsListener() {
 
 func chainReqWithoutFiltering(client net.Conn, host string, port uint16) {
 	defer client.Close()
-	remote, err := net.Dial("tcp", net.JoinHostPort(host, strconv.Itoa(int(port))))
+	address := net.JoinHostPort(host, strconv.Itoa(int(port)))
+	chainReqWithoutFilteringToAddress(client, address)
+}
+
+func chainReqWithoutFilteringToAddress(client net.Conn, address string) {
+	defer client.Close()
+	log.Printf("Chain without filtering %s", address)
+	dialer := net.Dialer{Timeout: time.Minute}
+	remote, err := dialer.Dial("tcp", address)
 	if err != nil {
-		log.Printf("chainReqWithoutFiltering error connect %s", err)
-		return
+		remote, err = dialer.Dial("tcp", address)
+		if err != nil {
+			log.Printf("chainReqWithoutFiltering error connect %s", err)
+			return
+		}
 	}
 
 	defer remote.Close()
