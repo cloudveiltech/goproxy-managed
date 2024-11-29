@@ -2,7 +2,7 @@
 <package>
   <metadata>
     <id>CloudVeil.proxy-native-macos</id>
-    <version>0.5.11</version>
+    <version>0.5.14</version>
     <title>CloudVeil Native Proxy (goproxy)</title>
     <authors>Elazar Leibovich, Dmitriy Goraschenko</authors>
     <license type="expression">BSD-3-Clause</license>

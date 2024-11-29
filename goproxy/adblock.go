@@ -60,6 +60,9 @@ func (am *AdBlockMatcher) IsDomainWhitelisted(host string) bool {
 	if adBlockMatcher == nil {
 		return false
 	}
+	if host == "localhost" {
+		return true
+	}
 	categories, matchTypes := adBlockMatcher.TestUrlBlockedWithMatcherCategories("https://"+host, host, "")
 	if len(categories) > 0 {
 		for index, category := range categories {
