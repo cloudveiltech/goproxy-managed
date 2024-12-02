@@ -41,7 +41,7 @@ var BLOCKED_IMAGE_BYTES []byte
 
 const BLOCKED_IMAGE_CONTENT_TYPE = "image/webp"
 const MIN_FILTERABLE_LENGTH_IMAGE = 1024
-
+const ENABLE_IMAGE_FILTERING = false
 const DEFAULT_HTTPS_PORT uint16 = 443
 
 type HttpsHandler func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string)
@@ -329,15 +329,15 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 	server = startHttpServer(portHttp)
 
 	proxy.OnRequest().DoFunc(
-		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+		func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 			userData := make(map[string]interface{})
 			ctx.UserData = userData
 
 			monitorLogFileSize()
 			if adBlockMatcher != nil {
-				category, matchType, isRelaxedPolicy := adBlockMatcher.TestUrlBlocked(r.URL.String(), r.Host, r.Referer())
+				category, matchType, isRelaxedPolicy := adBlockMatcher.TestUrlBlocked(req.URL.String(), req.Host, req.Referer())
 				if category != nil && matchType == Included {
-					url := r.URL.String()
+					url := req.URL.String()
 					if adBlockBlacklistCallback != nil {
 						unsafeUrl := C.CString(url)
 						unsafeCategory := C.CString(*category)
@@ -348,21 +348,22 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 
 					log.Printf("Page %s blocked by url, category %s", url, *category)
 
-					if strings.Contains(r.URL.Host, "vimeo") {
-						r.Header.Set("cookie", CookiePatchSafeSearch(r.URL.Host, r.Header.Get("cookie")))
+					if strings.Contains(req.URL.Host, "vimeo") {
+						req.Header.Set("cookie", CookiePatchSafeSearch(req.URL.Host, req.Header.Get("cookie")))
 					}
-
-					r.URL.RawPath = HostPathForceSafeSearch(r.URL.Host, r.URL.RawPath)
-					return r, goproxy.NewResponse(r,
+					response := NewResponse(req,
 						goproxy.ContentTypeHtml, http.StatusForbidden,
 						adBlockMatcher.GetBlockPage(url, *category, isRelaxedPolicy))
+
+					req.URL.RawPath = HostPathForceSafeSearch(req.URL.Host, req.URL.RawPath)
+					return req, response
 				}
 			}
 
 			// if strings.Contains(r.Host, "yandex") {
 			// 	return r, goproxy.NewResponse(r, "text/html; charset=UTF-8", 200, "Blocked by rules1")
 			// }
-			return r, nil
+			return req, nil
 		})
 
 	proxy.OnResponse().DoFunc(
@@ -387,7 +388,7 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 
 					if !isCertInException(certThumbPrint) {
 						message := adBlockMatcher.GetBadCertPage(ctx.Req.URL.String(), ctx.Req.URL.Host, certThumbPrint)
-						return goproxy.NewResponse(resp.Request, goproxy.ContentTypeHtml, http.StatusForbidden, message)
+						return NewResponse(resp.Request, goproxy.ContentTypeHtml, http.StatusForbidden, message)
 					}
 				}
 			}
@@ -415,7 +416,7 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 					if isAllowed {
 						return resp
 					} else {
-						return goproxy.NewResponse(resp.Request, BLOCKED_IMAGE_CONTENT_TYPE, 200, string(BLOCKED_IMAGE_BYTES))
+						return NewResponse(resp.Request, BLOCKED_IMAGE_CONTENT_TYPE, 200, string(BLOCKED_IMAGE_BYTES))
 					}
 				}
 			} else {
@@ -430,7 +431,8 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 				if category != nil {
 					log.Printf("Page %s blocked, category: %s, found forbidden phrases: %s", resp.Request.URL.String(), *category, strings.Join(matches, ", "))
 					message := adBlockMatcher.GetBlockPage(resp.Request.URL.String(), *category, false)
-					return goproxy.NewResponse(resp.Request, goproxy.ContentTypeHtml, http.StatusForbidden, message)
+					blockedResp := NewResponse(resp.Request, goproxy.ContentTypeHtml, http.StatusForbidden, message)
+					return blockedResp
 				}
 			}
 			return resp
@@ -442,6 +444,12 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 	if proxy.Verbose {
 		log.Printf("Server started")
 	}
+}
+
+func NewResponse(r *http.Request, contentType string, status int, body string) *http.Response {
+	resp := goproxy.NewResponse(r, contentType, status, body)
+	resp.Header.Add("Access-Control-Allow-Origin", "*")
+	return resp
 }
 
 func stopGoProxyServer() {
