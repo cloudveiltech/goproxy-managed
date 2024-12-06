@@ -333,6 +333,12 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 			userData := make(map[string]interface{})
 			ctx.UserData = userData
 
+			contentLength, _ := strconv.ParseInt(req.Header.Get("Content-Length"), 0, 64)
+			if contentLength > MIN_FILTERABLE_LENGTH {
+				userData["blocked"] = false
+				return req, nil
+			}
+
 			monitorLogFileSize()
 			if adBlockMatcher != nil {
 				category, matchType, isRelaxedPolicy := adBlockMatcher.TestUrlBlocked(req.URL.String(), req.Host, req.Referer())

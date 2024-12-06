@@ -47,10 +47,10 @@ type Http2Handler struct {
 func serveHttp2Filtering(r *http.Request, rawClientTls *tls.Conn, remote *tls.UConn) bool {
 	log.Print("Running http2 handler for " + r.URL.String())
 	verbose := false
-	/*	if strings.Contains(r.URL.String(), "google.com") || strings.Contains(r.URL.String(), "gstatic") {
-		log.Printf("Google %s: serveHttp2Filtering", r.URL.String())
-		verbose = true
-	}*/
+	// if strings.Contains(r.URL.String(), "womenshealthmag") {
+	// 	log.Printf("Google %s: serveHttp2Filtering", r.URL.String())
+	// 	verbose = true
+	// }
 
 	http2Handler := &Http2Handler{
 		maxFrameSize:           1024,
@@ -112,30 +112,14 @@ func (http2Handler *Http2Handler) processHttp2Stream(local *tls.Conn, remote *tl
 	}
 }
 
-func isContentTypeFilterable(contentType string, contentLength int64) bool {
-	if contentLength > MAX_FILTERABLE_LENGTH {
-		return false
-	}
-	if strings.Contains(contentType, "protobuf") {
-		return false
-	}
-
-	result := strings.Contains(contentType, "html") || strings.Contains(contentType, "json")
-	if ENABLE_IMAGE_FILTERING && !result {
-		result = result ||
-			strings.Contains(contentType, "image/png") ||
-			strings.Contains(contentType, "image/jpg") ||
-			strings.Contains(contentType, "image/jpeg") ||
-			strings.Contains(contentType, "image/webp")
-	}
-	return result
-}
-
 func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.Framer, decoder *hpack.Decoder, connectionState tls.ConnectionState, client bool) int {
 	f, err := directFramer.ReadFrame()
 	if err != nil {
 		log.Printf("%d ReadFrame client %v, err: %v, flagged: %v", http2Handler.id, client, err, http2Handler.verbose)
 		return STATUS_ENDED
+	}
+	if http2Handler.verbose {
+		log.Printf("%d Frame received %v client: %v, flagged: %v", http2Handler.id, f.Header().Type, client, http2Handler.verbose)
 	}
 	switch f.Header().Type {
 	case http2.FrameData:
@@ -221,29 +205,7 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 				}
 			}
 
-			http2Handler.rwMutex.RLock()
-			header, ok := http2Handler.lastHeadersBlock[streamId]
-			http2Handler.rwMutex.RUnlock()
-			if ok {
-				//	headerFields, _ := http2Handler.lastHeadersMap[streamId]
-				header.EndStream = false
-				//	header.BlockFragment = encodeHeaderFields(headerFields)
-				writeHeaders(directFramer, header, decoder)
-
-				http2Handler.rwMutex.Lock()
-				delete(http2Handler.lastHeadersBlock, streamId)
-				delete(http2Handler.lastHeadersMap, streamId)
-				http2Handler.rwMutex.Unlock()
-			}
-
-			for i, _ := range bodyChunks {
-				streamEnd := i == len(bodyChunks)-1 && streamEnded
-				directFramer.WriteData(streamId, streamEnd, bodyChunks[i])
-			}
-
-			http2Handler.rwMutex.Lock()
-			delete(http2Handler.responseBodyMapChunks, streamId)
-			http2Handler.rwMutex.Unlock()
+			http2Handler.writeDataAndHeaders(decoder, directFramer, f.Header().StreamID, streamEnded)
 			return STATUS_OK
 		}
 
@@ -262,8 +224,12 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 			})*/
 	case http2.FrameHeaders:
 		fr := f.(*http2.HeadersFrame)
+		http2Handler.rwMutex.Lock()
+		headerFields := http2Handler.lastHeadersMap[f.Header().StreamID]
+		http2Handler.rwMutex.Unlock()
+		newHeaders, _ := decodeAllHeaders(directFramer, fr, decoder)
+		headerFields = append(headerFields, newHeaders...)
 
-		headerFields, _ := decodeAllHeaders(directFramer, fr, decoder)
 		if len(headerFields) == 0 {
 			log.Printf("Error parsing headers")
 		}
@@ -332,13 +298,13 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 			Priority:      fr.Priority,
 		}
 
+		http2Handler.rwMutex.Lock()
+		http2Handler.lastHeadersMap[f.Header().StreamID] = headerFields
+		http2Handler.lastHeadersBlock[f.Header().StreamID] = &header
+		http2Handler.rwMutex.Unlock()
+
 		if writeHeadersImmediately {
-			writeHeaders(directFramer, &header, decoder)
-		} else {
-			http2Handler.rwMutex.Lock()
-			http2Handler.lastHeadersMap[f.Header().StreamID] = headerFields
-			http2Handler.lastHeadersBlock[f.Header().StreamID] = &header
-			http2Handler.rwMutex.Unlock()
+			http2Handler.writeDataAndHeaders(decoder, directFramer, f.Header().StreamID, fr.StreamEnded())
 		}
 	case http2.FramePriority:
 		fr := f.(*http2.PriorityFrame)
@@ -400,6 +366,25 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 	}
 
 	return STATUS_OK
+}
+
+func isContentTypeFilterable(contentType string, contentLength int64) bool {
+	if contentLength > MAX_FILTERABLE_LENGTH {
+		return false
+	}
+	if strings.Contains(contentType, "protobuf") {
+		return false
+	}
+
+	result := strings.Contains(contentType, "html") || strings.Contains(contentType, "json")
+	if ENABLE_IMAGE_FILTERING && !result {
+		result = result ||
+			strings.Contains(contentType, "image/png") ||
+			strings.Contains(contentType, "image/jpg") ||
+			strings.Contains(contentType, "image/jpeg") ||
+			strings.Contains(contentType, "image/webp")
+	}
+	return result
 }
 
 func decodeAllHeaders(framer *http2.Framer, fr *http2.HeadersFrame, decoder *hpack.Decoder) ([]hpack.HeaderField, []byte) {
@@ -466,6 +451,43 @@ func decodeAllHeaders(framer *http2.Framer, fr *http2.HeadersFrame, decoder *hpa
 	}
 
 	return res, buf.Bytes()
+}
+
+func (http2Handler *Http2Handler) writeDataAndHeaders(decoder *hpack.Decoder, directFramer *http2.Framer, streamId uint32, streamEnded bool) {
+	http2Handler.rwMutex.Lock()
+	headerFields := http2Handler.lastHeadersMap[streamId]
+	bodyChunks := http2Handler.responseBodyMapChunks[streamId]
+	lastHeader := http2Handler.lastHeadersBlock[streamId]
+	http2Handler.rwMutex.Unlock()
+
+	if lastHeader != nil {
+		header := &http2.HeadersFrameParam{
+			StreamID:      streamId,
+			BlockFragment: encodeHeaderFields(headerFields),
+			EndStream:     false,
+			EndHeaders:    true,
+			PadLength:     0,
+			Priority:      lastHeader.Priority,
+		}
+		header.EndStream = bodyChunks == nil && streamEnded
+		writeHeaders(directFramer, header, decoder)
+
+		http2Handler.rwMutex.Lock()
+		delete(http2Handler.lastHeadersBlock, streamId)
+		delete(http2Handler.lastHeadersMap, streamId)
+		http2Handler.rwMutex.Unlock()
+	}
+
+	if bodyChunks != nil {
+		for i, _ := range bodyChunks {
+			streamEnd := i == len(bodyChunks)-1 && streamEnded
+			directFramer.WriteData(streamId, streamEnd, bodyChunks[i])
+		}
+
+		http2Handler.rwMutex.Lock()
+		delete(http2Handler.responseBodyMapChunks, streamId)
+		http2Handler.rwMutex.Unlock()
+	}
 }
 
 func writeFinalData(framer *http2.Framer, streamId uint32, data *bytes.Buffer, chunkSize int) {
