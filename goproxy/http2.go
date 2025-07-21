@@ -224,22 +224,24 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 			})*/
 	case http2.FrameHeaders:
 		fr := f.(*http2.HeadersFrame)
+		streamId := f.Header().StreamID
+
+		whitelisted := false
+
 		http2Handler.rwMutex.Lock()
 		headerFields := http2Handler.lastHeadersMap[f.Header().StreamID]
+		ctx := http2Handler.proxyCtx[streamId]
+		if ctx != nil && ctx.UserData != nil {
+			blocked, exists := ctx.UserData.(map[string]interface{})["blocked"]
+			whitelisted = exists && !(blocked.(bool))
+		}
 		http2Handler.rwMutex.Unlock()
+
 		newHeaders, _ := decodeAllHeaders(directFramer, fr, decoder)
 		headerFields = append(headerFields, newHeaders...)
 
 		if len(headerFields) == 0 {
 			log.Printf("Error parsing headers")
-		}
-		whitelisted := false
-
-		streamId := f.Header().StreamID
-		ctx := http2Handler.proxyCtx[streamId]
-		if ctx != nil && ctx.UserData != nil {
-			blocked, exists := ctx.UserData.(map[string]interface{})["blocked"]
-			whitelisted = exists && !(blocked.(bool))
 		}
 
 		writeHeadersImmediately := whitelisted || client || fr.StreamEnded()

@@ -526,10 +526,10 @@ func chainReqWithoutFiltering(client net.Conn, host string, port int) {
 	defer remote.Close()
 
 	go func() {
-		io.Copy(remote, client)
+		nonBlockingCopy(remote, client)
 	}()
 
-	io.Copy(client, remote)
+	nonBlockingCopy(client, remote)
 }
 
 func nonBlockingCopy(from, to net.Conn) {
