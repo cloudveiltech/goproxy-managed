@@ -3,12 +3,12 @@ package main
 /*
 #include <stdlib.h>
 
-typedef int (*adBlockCallback)(char* url, char* category);
+typedef int (*adBlockCallback)(char* url, char* category, char* trigger);
 
-static inline int FireAdblockCallback(void* ptr, char* url, char* category)
+static inline int FireAdblockCallback(void* ptr, char* url, char* category, char* trigger)
 {
 	adBlockCallback p = (adBlockCallback)ptr;
-	return p(url, category);
+	return p(url, category, trigger);
 }
 */
 import "C"
@@ -67,7 +67,7 @@ var handleConnectFunc HttpsHandler = func(host string, ctx *goproxy.ProxyCtx) (*
 
 func initGoProxy() {
 	proxy = goproxy.NewProxyHttpServer()
-	proxy.Verbose = true
+	proxy.Verbose = false
 
 	proxy.NonproxyHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if req.Host == "" {
@@ -343,23 +343,31 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 			if adBlockMatcher != nil {
 				category, matchType, isRelaxedPolicy := adBlockMatcher.TestUrlBlocked(req.URL.String(), req.Host, req.Referer())
 				if category != nil && matchType == Included {
+					categoryParts := strings.Split(*category, "/")
+					baseCategory := category
+					if len(categoryParts) > 2 {
+						baseCategory = &categoryParts[len(categoryParts)-2]
+					}
+
 					url := req.URL.String()
 					if adBlockBlacklistCallback != nil {
 						unsafeUrl := C.CString(url)
-						unsafeCategory := C.CString(*category)
-						C.FireAdblockCallback(adBlockBlacklistCallback, unsafeUrl, unsafeCategory)
+						unsafeCategory := C.CString(*baseCategory)
+						unsafeTrigger := C.CString("")
+						C.FireAdblockCallback(adBlockBlacklistCallback, unsafeUrl, unsafeCategory, unsafeTrigger)
 						C.free(unsafe.Pointer(unsafeUrl))
 						C.free(unsafe.Pointer(unsafeCategory))
+						C.free(unsafe.Pointer(unsafeTrigger))
 					}
 
-					log.Printf("Page %s blocked by url, category %s", url, *category)
+					log.Printf("Page %s blocked by url, category %s", url, *baseCategory)
 
 					if strings.Contains(req.URL.Host, "vimeo") {
 						req.Header.Set("cookie", CookiePatchSafeSearch(req.URL.Host, req.Header.Get("cookie")))
 					}
 					response := NewResponse(req,
 						goproxy.ContentTypeHtml, http.StatusForbidden,
-						adBlockMatcher.GetBlockPage(url, *category, isRelaxedPolicy))
+						adBlockMatcher.GetBlockPage(url, *baseCategory, "", isRelaxedPolicy))
 
 					req.URL.RawPath = HostPathForceSafeSearch(req.URL.Host, req.URL.RawPath)
 					return req, response
@@ -435,8 +443,26 @@ func startGoProxyServer(portHttp, portHttps, portConfigurationServer int16, cert
 				category, matches := adBlockMatcher.TestContainsForbiddenPhrases(bytesData)
 
 				if category != nil {
-					log.Printf("Page %s blocked, category: %s, found forbidden phrases: %s", resp.Request.URL.String(), *category, strings.Join(matches, ", "))
-					message := adBlockMatcher.GetBlockPage(resp.Request.URL.String(), *category, false)
+					url := resp.Request.URL.String()
+					triggers := strings.Join(matches, ", ")
+					categoryParts := strings.Split(*category, "/")
+					baseCategory := category
+					if len(categoryParts) > 2 {
+						baseCategory = &categoryParts[len(categoryParts)-2]
+					}
+
+					log.Printf("Page %s blocked, category: %s, found forbidden phrases: %s", url, *baseCategory, triggers)
+					if adBlockBlacklistCallback != nil {
+						unsafeUrl := C.CString(url)
+						unsafeCategory := C.CString(*baseCategory)
+						unsafeTrigger := C.CString(triggers)
+						C.FireAdblockCallback(adBlockBlacklistCallback, unsafeUrl, unsafeCategory, unsafeTrigger)
+						C.free(unsafe.Pointer(unsafeUrl))
+						C.free(unsafe.Pointer(unsafeCategory))
+						C.free(unsafe.Pointer(unsafeTrigger))
+					}
+
+					message := adBlockMatcher.GetBlockPage(resp.Request.URL.String(), *baseCategory, triggers, false)
 					blockedResp := NewResponse(resp.Request, goproxy.ContentTypeHtml, http.StatusForbidden, message)
 					return blockedResp
 				}

@@ -117,13 +117,15 @@ func (am *AdBlockMatcher) addMatcher(category string, listType int) {
 	am.lastCategory = categoryMatcher
 }
 
-func (am *AdBlockMatcher) GetBlockPage(blockedUrl, category string, isRelaxedPolicy bool) string {
+func (am *AdBlockMatcher) GetBlockPage(blockedUrl, category string, textTrigger string, isRelaxedPolicy bool) string {
 	tags := am.defaultBlockPageTags
 
 	tags["url_text"] = blockedUrl
 	tags["friendly_url_text"] = blockedUrl
 	tags["message"] = ""
 	tags["matching_category"] = category
+	tags["text_trigger"] = textTrigger
+
 	if isRelaxedPolicy {
 		tags["isRelaxedPolicy"] = "1"
 	} else {
@@ -131,7 +133,10 @@ func (am *AdBlockMatcher) GetBlockPage(blockedUrl, category string, isRelaxedPol
 	}
 	tags["showUnblockRequestButton"] = "1"
 
-	tags["unblockRequest"] = tags["unblockRequestBase"] + "&category_name=" + url.QueryEscape(category) + "&blocked_request=" + base64.StdEncoding.EncodeToString([]byte(blockedUrl))
+	tags["unblockRequest"] = tags["unblockRequestBase"] +
+		"&category_name=" + url.QueryEscape(category) +
+		"&blocked_request=" + base64.StdEncoding.EncodeToString([]byte(blockedUrl)) +
+		"&trigger=" + base64.StdEncoding.EncodeToString([]byte(textTrigger))
 
 	res, err := am.BlockPageTemplate.Exec(tags)
 	if err != nil {

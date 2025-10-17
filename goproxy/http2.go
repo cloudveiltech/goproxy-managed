@@ -47,10 +47,9 @@ type Http2Handler struct {
 func serveHttp2Filtering(r *http.Request, rawClientTls *tls.Conn, remote *tls.UConn) bool {
 	log.Print("Running http2 handler for " + r.URL.String())
 	verbose := false
-	// if strings.Contains(r.URL.String(), "womenshealthmag") {
-	// 	log.Printf("Google %s: serveHttp2Filtering", r.URL.String())
-	// 	verbose = true
-	// }
+	if strings.Contains(r.URL.String(), "monday.com") {
+		verbose = true
+	}
 
 	http2Handler := &Http2Handler{
 		maxFrameSize:           1024,
@@ -64,7 +63,10 @@ func serveHttp2Filtering(r *http.Request, rawClientTls *tls.Conn, remote *tls.UC
 		connectionReadyForData: false,
 		rwMutex:                &sync.RWMutex{},
 		verbose:                verbose,
-		id:                     time.Now().Unix(),
+		id:                     time.Now().UnixNano() / (1 << 22),
+	}
+	if verbose {
+		log.Printf("Monday %s: serveHttp2Filtering - %d", r.URL.String(), http2Handler.id)
 	}
 	go func() {
 		http2Handler.processHttp2Stream(rawClientTls, remote)
@@ -160,15 +162,17 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 			bodyChunks = http2Handler.responseBodyMapChunks[streamId]
 			http2Handler.rwMutex.RUnlock()
 			if http2Handler.verbose && fr.StreamEnded() {
-				log.Printf("%d Stream ended, flagged: %v", http2Handler.id, client, http2Handler.verbose)
+				log.Printf("%d Stream ended, client %v, flagged: %v", http2Handler.id, client, http2Handler.verbose)
 			}
 			streamEnded := fr.StreamEnded() || force
 			if !whitelisted && lastHttpResponse != nil && !client {
 				contentType := lastHttpResponse.Header.Get("Content-Type")
 				contentLength := lastHttpResponse.ContentLength
-				isContentTypeFilterable := isContentTypeFilterable(contentType, contentLength)
+				isContentTypeFilterable := isContentTypeFilterable(contentType, contentLength) && lastHttpResponse.StatusCode < 300
 				putResponseBody(bodyChunks, lastHttpResponse)
-
+				if http2Handler.verbose {
+					log.Printf("%d Stream DATA, content Filterable: %v", http2Handler.id, isContentTypeFilterable)
+				}
 				if isContentTypeFilterable && streamEnded {
 					if contentLength > MIN_FILTERABLE_LENGTH {
 						http2Handler.rwMutex.RLock()
@@ -284,8 +288,11 @@ func (http2Handler *Http2Handler) readFrame(directFramer, reverseFramer *http2.F
 
 			contentType := response.Header.Get("Content-Type")
 			contentLength, _ := strconv.ParseInt(response.Header.Get("Content-Length"), 0, 64)
-			if !isContentTypeFilterable(contentType, contentLength) {
+			if !isContentTypeFilterable(contentType, contentLength) || response.StatusCode > 300 {
 				writeHeadersImmediately = true
+				if http2Handler.verbose {
+					log.Printf("%d Headers writing immediately", http2Handler.id)
+				}
 			}
 		}
 

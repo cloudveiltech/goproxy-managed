@@ -26,7 +26,6 @@ var certsException = make(map[string]bool)
 var logFilePath = ""
 var logFileHandle *os.File
 var isImageFilteringEnabled = false
-
 var mainInteropSyncMutex sync.Mutex
 
 //export AddCertException
@@ -208,5 +207,8 @@ func main() {
 
 func test() {
 	log.Printf("main: starting HTTP server")
+	AdBlockMatcherInitialize()
+	AdBlockMatcherParseRuleFile(C.CString("./rules.txt"), C.CString(""), 1)
+	AdBlockMatcherBuild()
 	startGoProxyServer(14600, 14501, 14502, "rootCertificate.pem", "rootPrivateKey.pem")
 }
