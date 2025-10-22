@@ -38,7 +38,6 @@ import (
 	"unsafe"
 
 	"github.com/cloudveiltech/goproxy"
-	"github.com/inconshreveable/go-vhost"
 	"github.com/things-go/go-socks5"
 )
 
@@ -402,16 +401,12 @@ func runHttpsListener() {
 				}
 				return
 			}
-			tlsConn, err := vhost.TLS(buffered)
+			tlsConn, err := TLS(buffered)
 			localPort := tlsConn.RemoteAddr().(*net.TCPAddr).Port
 
 			port := DEFAULT_HTTPS_PORT
 			ipString := "127.0.0.1"
-			remoteAddr := tlsConn.LocalAddr().String()
-			if strings.Count(remoteAddr, ":") > 1 {
-				//ipv6
-				ipString = "::1"
-			}
+
 			exists := false
 			attempts := 0
 			for attempts < 3000 {
@@ -428,25 +423,32 @@ func runHttpsListener() {
 				}
 				attempts = attempts + 1
 			}
+			if !exists {
+				ipString = "127.0.0.1"
+				remoteAddr := tlsConn.LocalAddr().String()
+				if strings.Count(remoteAddr, ":") > 1 {
+					//ipv6
+					ipString = "::1"
+				}
+			}
 
 			ip := net.ParseIP(ipString)
 
 			isPrivateNetwork := ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalMulticast()
 			if isPrivateNetwork {
 				if proxy.Verbose {
-					log.Printf("Chain local IP wihout filtering %s", ipString)
+					log.Printf("Chain local IP wihout filtering %s %d", ipString, port)
 				}
 				chainReqWithoutFiltering(tlsConn, ip.String(), port)
 				return
 			}
-
 			if proxy.Verbose {
 				log.Printf("Read port: %d for ip %v", port, ipString)
 			}
 
 			if err != nil {
 				log.Printf("Assuming plain http connection - %v", err)
-				httpConn, err := vhost.HTTP(tlsConn)
+				httpConn, err := HTTP(tlsConn)
 				if err != nil {
 					log.Printf("Not http either, skipping - %v, %s %d", err, ip.String(), port)
 
@@ -505,57 +507,74 @@ func chainReqToLocalServer(client net.Conn, port int) {
 		return
 	}
 
-	defer remote.Close()
-	defer client.Close()
-
-	go func() {
-		nonBlockingCopy(remote, client)
-	}()
-
-	nonBlockingCopy(client, remote)
+	twoWayCopy(client, remote)
 }
 
 func chainReqWithoutFiltering(client net.Conn, host string, port int) {
-	defer client.Close()
 	remote, err := net.Dial("tcp", net.JoinHostPort(host, strconv.Itoa(port)))
 	if err != nil {
 		log.Printf("chainReqWithoutFiltering error connect %s", err)
 		return
 	}
-
-	defer remote.Close()
-
-	go func() {
-		nonBlockingCopy(remote, client)
-	}()
-
-	nonBlockingCopy(client, remote)
+	twoWayCopy(client, remote)
 }
 
+func twoWayCopy(client, remote net.Conn) {
+	defer remote.Close()
+	defer client.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		io.Copy(client, remote)
+		closeWriter, ok := client.(CloseWriter)
+		if ok {
+			closeWriter.CloseWrite()
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		io.Copy(remote, client)
+		closeWriter, ok := remote.(CloseWriter)
+		if ok {
+			closeWriter.CloseWrite()
+		}
+	}()
+
+	wg.Wait()
+}
 func nonBlockingCopy(from, to net.Conn) {
 	buf := make([]byte, 10240)
 	for {
-		from.SetDeadline(time.Now().Add(time.Minute * 10))
 		if server == nil {
 			log.Printf("Break chain on server stop")
 			break
 		}
 
-		n, err := from.Read(buf)
-		if err != nil && err != io.EOF {
-			log.Printf("error request %s", err)
+		if !nonBlockingCopyIteration(from, to, buf) {
 			break
 		}
-		if n == 0 {
-			break
-		}
-
-		if _, err := to.Write(buf[:n]); err != nil {
-			log.Printf("error response %s", err)
-			break
-		}
-
 	}
+}
+
+func nonBlockingCopyIteration(from, to net.Conn, buf []byte) bool {
+	n, err := from.Read(buf)
+	if err != nil && err != io.EOF {
+		log.Printf("error request %s", err)
+		return false
+	}
+	if n == 0 {
+		return false
+	}
+
+	if _, err := to.Write(buf[:n]); err != nil {
+		log.Printf("error response %s", err)
+		return false
+	}
+
+	return true
 }
 
 type httpResponseWriter struct {
@@ -650,9 +669,8 @@ func test() {
 	//SetProxyLogFile("text.log")
 
 	AdBlockMatcherInitialize()
+	AdBlockMatcherParseRuleFile("rules.txt", 1, 1)
 	AdblockMatcherLoadingFinished()
-
-	log.Printf("main: serving for 1000 seconds")
 
 	var quit = false
 	var line = ""
